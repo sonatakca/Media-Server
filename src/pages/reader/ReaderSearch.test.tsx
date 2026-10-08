@@ -107,6 +107,37 @@ describe("searching inside the reader", () => {
     expect(onShow).toHaveBeenCalledWith(HIT);
   });
 
+  it("says it is searching until the answer comes, never that nothing matched", async () => {
+    let answer: (outcome: BookSearchOutcome) => void = () => undefined;
+    searchBook.mockImplementation((_id, query) =>
+      query
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve({ state: "ready", hits: [] }),
+    );
+    const user = userEvent.setup();
+    renderSearch();
+
+    await user.type(screen.getByRole("searchbox"), "the savage{Enter}");
+    expect(screen.getByRole("status")).toHaveTextContent("Searching…");
+    expect(
+      screen.queryByText("Nothing in this book matches that."),
+    ).not.toBeInTheDocument();
+
+    expect(
+      await screen.findByText(/loads its search model first/, undefined, {
+        timeout: 3000,
+      }),
+    ).toBeInTheDocument();
+
+    await act(async () => answer({ state: "ready", hits: [HIT] }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Vahşi kırbacı kaldırdı/ }),
+    ).toBeInTheDocument();
+  });
+
   it("says so when nothing matches, when the book cannot be searched, and when the server is away", async () => {
     searchBook.mockResolvedValue({ state: "ready", hits: [] });
     const user = userEvent.setup();

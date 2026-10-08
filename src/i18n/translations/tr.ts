@@ -585,6 +585,9 @@ export const tr = {
   "reader.search.preparing": "Kitap aramaya hazırlanıyor",
   "reader.search.preparingDetail":
     "Sunucu her kitabı herkes için bir kez hazırlar; bu kitap henüz bitmedi. Birkaç dakika sürer; isterseniz okumaya devam edin, döndüğünüzde arama hazır olacak.",
+  "reader.search.searching": "Aranıyor…",
+  "reader.search.searchingDetail":
+    "Bir süredir arama yapılmadıysa sunucu önce arama modelini yükler; ilk arama birkaç saniye sürer.",
   "reader.search.noResults": "Bu kitapta buna uyan bir yer yok.",
   "reader.search.unavailable": "Bu kitapta arama yapılamıyor.",
   "reader.search.failed":

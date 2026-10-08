@@ -1292,6 +1292,33 @@ body:has(.seyirlik-reader-shell) {
   width: 0;
 }
 
+/* A search under way: no figure to show, so a short bar runs the track. */
+.rd-search-meter[data-searching] > span {
+  width: 35%;
+  transition: none;
+  animation: rd-searching 1.2s var(--rd-sine) infinite;
+}
+
+@keyframes rd-searching {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(286%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-search-meter[data-searching] {
+    animation: rd-pending 1.6s var(--rd-sine) infinite alternate;
+  }
+
+  .rd-search-meter[data-searching] > span {
+    width: 0;
+    animation: none;
+  }
+}
+
 .rd-search-hit {
   grid-template-columns: minmax(0, 1fr);
 }

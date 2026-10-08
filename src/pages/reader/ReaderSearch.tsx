@@ -12,6 +12,12 @@ import {
 const PREPARING_POLL_MS = 2500;
 
 /**
+ * How long a search may take before the wait is explained. A warm search
+ * answers well inside this; a slower one is the server loading its model.
+ */
+const SLOW_SEARCH_MS = 1500;
+
+/**
  * The contents drawer's search: a moment described in the reader's own words,
  * answered with the passages that mean it, whatever words the book used.
  *
@@ -40,6 +46,16 @@ export function ReaderSearch({
   const [outcome, setOutcome] = useState<BookSearchOutcome | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!busy) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setSlow(true), SLOW_SEARCH_MS);
+    return () => window.clearTimeout(timer);
+  }, [busy]);
 
   useEffect(() => {
     if (!active) {
@@ -78,6 +94,22 @@ export function ReaderSearch({
   const hits = outcome?.state === "ready" && asked ? outcome.hits : null;
 
   const status = (() => {
+    // Until the answer comes, whatever is on screen answered something else:
+    // saying "nothing matches" now would send the reader away too early.
+    if (busy) {
+      return (
+        <div className="rd-search-preparing" role="status">
+          <p className="rd-search-preparing-title">
+            {t("reader.search.searching")}
+          </p>
+          {slow ? <p>{t("reader.search.searchingDetail")}</p> : null}
+          <div className="rd-search-meter" data-searching aria-hidden="true">
+            <span />
+          </div>
+        </div>
+      );
+    }
+
     if (failed) {
       return <p className="rd-empty">{t("reader.search.failed")}</p>;
     }
@@ -139,6 +171,7 @@ export function ReaderSearch({
           if (next) {
             // Results already on screen stay, dimmed, until the new ones come.
             setBusy(true);
+            setSlow(false);
             setAsked(next);
             setRound((value) => value + 1);
           }
