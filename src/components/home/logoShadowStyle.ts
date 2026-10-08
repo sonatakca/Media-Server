@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getDropShadowReach } from "../../lib/logoLayout";
 import {
   DEFAULT_LOGO_SHADOW,
   measureLogoShadow,
@@ -64,4 +65,15 @@ export function stageLogoFilter(shadow: LogoShadow, presence: number): string {
   if (s <= 0.01) return base;
   const rgb = shadow.tone === "dark" ? "0,0,0" : "255,255,255";
   return `drop-shadow(0 0 3px rgba(${rgb},${(0.55 * s).toFixed(3)})) drop-shadow(0 0 22px rgba(${rgb},${(0.6 * s).toFixed(3)})) ${base}`;
+}
+
+/**
+ * How far the stage logo's halo can paint past the logo, in the title box's
+ * px. The filter goes on a frame padded by this much, never on the `<img>`:
+ * iOS WebKit can clip a filtered element to its own box, which cut the halo
+ * off in straight lines (see `getLogoShadowFrameStyle`). Taken at full
+ * presence, the furthest the halo ever reaches; presence only changes alpha.
+ */
+export function stageLogoReach(shadow: LogoShadow): number {
+  return Math.ceil(getDropShadowReach(stageLogoFilter(shadow, 1)));
 }

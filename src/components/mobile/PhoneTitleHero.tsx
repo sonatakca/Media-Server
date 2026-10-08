@@ -24,7 +24,11 @@ import {
   heroPlayState,
 } from "../home/HeroActions";
 import { HERO_MOTION } from "../home/homeHeroModel";
-import { stageLogoFilter, useLogoShadow } from "../home/logoShadowStyle";
+import {
+  stageLogoFilter,
+  stageLogoReach,
+  useLogoShadow,
+} from "../home/logoShadowStyle";
 import { useSmartContinueItems } from "../home/useSmartContinueItems";
 import {
   PHONE_TITLE_HERO_ACTION,
@@ -110,6 +114,7 @@ export function PhoneTitleHero({
     artwork?.url,
     PHONE_TITLE_LOGO_REGION,
   );
+  const logoReach = stageLogoReach(logoShadow);
 
   const { playItem, playLabel, shortPlayLabel, canStartOver, progress } =
     heroPlayState(item, smartContinueItems, t);
@@ -201,17 +206,31 @@ export function PhoneTitleHero({
             }}
           >
             {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt={title}
-                draggable={false}
-                onLoad={() => setIsLogoLoaded(true)}
-                onError={() => setIsLogoLoaded(false)}
-                className={`block max-h-full max-w-full select-none object-contain object-left-bottom transition-opacity duration-300 ${
-                  isLogoLoaded ? "opacity-100" : "opacity-0"
-                }`}
-                style={{ filter: stageLogoFilter(logoShadow, 1) }}
-              />
+              // The halo goes on a frame padded by its reach over the whole
+              // logo box, never on the image: iOS WebKit can clip a filtered
+              // element to its own box. Its content box is the logo box, so
+              // max-h-full and max-w-full still measure against it. The fade
+              // stays on the image: on the frame, WebKit drew the logo's
+              // edges a fraction of a pixel differently once it had settled.
+              <div
+                className="absolute flex items-end"
+                style={{
+                  inset: -logoReach,
+                  padding: logoReach,
+                  filter: stageLogoFilter(logoShadow, 1),
+                }}
+              >
+                <img
+                  src={logoUrl}
+                  alt={title}
+                  draggable={false}
+                  onLoad={() => setIsLogoLoaded(true)}
+                  onError={() => setIsLogoLoaded(false)}
+                  className={`block max-h-full max-w-full select-none object-contain object-left-bottom transition-opacity duration-300 ${
+                    isLogoLoaded ? "opacity-100" : "opacity-0"
+                  }`}
+                />
+              </div>
             ) : (
               <span className="text-cinematic-title line-clamp-2 text-[1.375rem] font-black uppercase leading-[0.9] text-white [font-stretch:78%]">
                 {title}
