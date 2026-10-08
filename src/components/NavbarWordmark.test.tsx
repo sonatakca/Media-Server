@@ -99,6 +99,24 @@ describe("NavbarWordmark", () => {
     expect(shownAccent(container)).toBe("Olive");
   });
 
+  it("draws its shadow from the frames, never a CSS filter", () => {
+    const { container } = render(<NavbarWordmark />);
+    const wordmark = container.querySelector<HTMLElement>(
+      "[data-wordmark-accent]",
+    )!;
+
+    // On an iPad the loading cycle's repaints clipped a filter here to the
+    // wordmark's own box, drawing a dark rectangle behind the letters.
+    expect(wordmark.style.filter).toBe("");
+    const frames = wordmark.querySelectorAll("img");
+    expect(frames).toHaveLength(6);
+    for (const frame of frames) {
+      expect(frame.style.filter).toBe("");
+      expect(frame.style.left).toMatch(/^-/);
+      expect(frame.style.top).toMatch(/^-/);
+    }
+  });
+
   it("follows an accent change", async () => {
     const { container } = render(<NavbarWordmark />);
 

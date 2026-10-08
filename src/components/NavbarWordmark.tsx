@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useReducedMotion } from "framer-motion";
-import warmRed from "../assets/navbar-wordmark/warm-red.webp";
-import amber from "../assets/navbar-wordmark/amber.webp";
-import gold from "../assets/navbar-wordmark/gold.webp";
-import olive from "../assets/navbar-wordmark/olive.webp";
-import green from "../assets/navbar-wordmark/green.webp";
-import teal from "../assets/navbar-wordmark/teal.webp";
+import warmRed from "../assets/navbar-wordmark/shadowed/warm-red.webp";
+import amber from "../assets/navbar-wordmark/shadowed/amber.webp";
+import gold from "../assets/navbar-wordmark/shadowed/gold.webp";
+import olive from "../assets/navbar-wordmark/shadowed/olive.webp";
+import green from "../assets/navbar-wordmark/shadowed/green.webp";
+import teal from "../assets/navbar-wordmark/shadowed/teal.webp";
 import {
   isLoadingActivityPending,
   subscribeLoadingActivity,
 } from "../lib/loadingActivity";
+import { getWordmarkShadowFrameStyle } from "./navbarWordmarkShadow";
 
 // Palette order, which is also the cycle order. Names match ACCENT_THEMES.
 const FRAMES = [
@@ -43,9 +44,10 @@ function getAccentThemeName(): string | undefined {
 /**
  * A soft dark shadow, wherever the wordmark stands: over a hero the room
  * behind it is lit by the artwork's colours, which can be the accent's own.
+ * It is baked into the frames, which overhang the box by its reach, never a
+ * CSS filter: see `navbarWordmarkShadow.ts`.
  */
-const WORDMARK_SHADOW =
-  "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)) drop-shadow(0 3px 14px rgba(0, 0, 0, 0.5))";
+const WORDMARK_FRAME_STYLE = getWordmarkShadowFrameStyle();
 
 /**
  * The wordmark in the current accent colour. While anything is loading it
@@ -122,7 +124,6 @@ export function NavbarWordmark({ className = "" }: { className?: string }) {
     <span
       data-wordmark-accent={FRAMES[shownIndex].accent}
       className={`relative block aspect-[430/176] ${className}`}
-      style={{ filter: WORDMARK_SHADOW }}
     >
       {FRAMES.map((frame, index) => (
         // Every frame stays mounted so a colour change never waits on a decode.
@@ -133,8 +134,11 @@ export function NavbarWordmark({ className = "" }: { className?: string }) {
           aria-hidden="true"
           draggable={false}
           decoding="async"
-          className="absolute inset-0 h-full w-full object-contain"
-          style={{ opacity: index === shownIndex ? 1 : 0 }}
+          className="pointer-events-none absolute max-w-none"
+          style={{
+            ...WORDMARK_FRAME_STYLE,
+            opacity: index === shownIndex ? 1 : 0,
+          }}
         />
       ))}
     </span>
