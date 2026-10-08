@@ -2,6 +2,7 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { HomeHeroSkeleton, TitleHeroSkeleton } from "./home/HomeHeroSkeleton";
 import type { MediaItem } from "../lib/types";
 import { useIsPhoneView } from "../hooks/useIsPhoneView";
+import { HeroBackButtonPlaceholder } from "./mobile/HeroBackButton";
 import { PhoneTitleHeroSkeleton } from "./mobile/PhoneTitleHeroSkeleton";
 import { isOfflineSupported } from "../lib/offline/offlineLibrary";
 import { AnimatedText } from "./AnimatedText";
@@ -608,9 +609,13 @@ function MobileDetailsSkeleton({
     <div className="layout-no-offset min-w-0 pb-7">
       {/* The page's own furniture, where the page puts it, over the title
           hero's skeleton at the hero's own height. */}
-      <div className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]">
-        <div className="shimmer h-12 w-12 rounded-full" />
-      </div>
+      {isPhone ? (
+        <HeroBackButtonPlaceholder />
+      ) : (
+        <div className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]">
+          <div className="shimmer h-12 w-12 rounded-full" />
+        </div>
+      )}
       {/* A phone's watched button is in the hero's action row. */}
       {isPhone ? null : (
         <div

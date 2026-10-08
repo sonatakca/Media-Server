@@ -11,6 +11,7 @@ import { ErrorMessage } from "../../components/ErrorMessage";
 import { useIsPhoneView } from "../../hooks/useIsPhoneView";
 import { TitleHero } from "../../components/home/TitleHero";
 import { PhoneTitleHero } from "../../components/mobile/PhoneTitleHero";
+import { HeroBackButton } from "../../components/mobile/HeroBackButton";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
@@ -527,11 +528,23 @@ export function MobileLibraryPage({
           }
         >
           <div className="layout-no-offset flex min-w-0 flex-col">
-            <BackButton
-              fallbackTo={data.library.Type === "Movie" ? "/movies" : "/shows"}
-              label=""
-              className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
-            />
+            {isPhone ? (
+              isInitialDetailsReady ? (
+                <HeroBackButton
+                  fallbackTo={
+                    data.library.Type === "Movie" ? "/movies" : "/shows"
+                  }
+                />
+              ) : null
+            ) : (
+              <BackButton
+                fallbackTo={
+                  data.library.Type === "Movie" ? "/movies" : "/shows"
+                }
+                label=""
+                className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
+              />
+            )}
 
             {/* A phone, and a tablet held upright, have the phone's title
                 hero: the whole backdrop, the copy beneath it. A tablet on its
