@@ -29,6 +29,7 @@ import { getStageImageCandidates } from "../hero/heroModel";
 import { Tooltip } from "../ui/Tooltip";
 import { HeroActions, heroPlayState } from "./HeroActions";
 import { sampleUrl } from "./logoShadowStyle";
+import { copyShadowFor } from "./heroCopyShadow";
 import {
   COPY_ROWS,
   HERO_MOTION,
@@ -239,26 +240,26 @@ function useCopyShade(
 
 /**
  * White copy set straight on the artwork, brighter the more the picture
- * behind it needs, always on a black cloud of its own shape. The cloud is at
- * full strength whatever was measured: black vanishes into a dark picture, so
- * it costs nothing there, and an average brightness says little about busy
- * art (a dark sky crossed by fire averages out to "middling" while the words
- * sit on the fire). The cloud follows the letters, so it shades the words and
- * nothing around them. It is a filter, not a text shadow, because a filter is
- * drawn after the text is truncated and clamped: a text shadow is clipped
- * with the text, and ends in a rectangle. A one-pixel black edge comes first,
- * because a small line of facts has too little ink for a soft blur alone to
- * darken a white sky behind it. The widest blur is the 16px the overview's
- * room (OVERVIEW_SHADE_ROOM_PX) was sized for.
+ * behind it needs, always on a black cloud of its own shape. The cloud
+ * follows the letters, so it shades the words and nothing around them.
+ *
+ * Over bright art it is a crisp black edge and a cloud; over dark art a
+ * heavier, wider cloud. That is the user's own pick from both kinds of
+ * picture: the heavier one turns into a smudge on a white sky, and the
+ * lighter one leaves the words thin on a dark, busy one. Which one comes from
+ * the brightness measured behind the facts line (`useCopyShade`), and until
+ * that arrives the copy stands on the heavier one.
+ *
+ * It is a filter, not a text shadow, because a filter is drawn after the
+ * text is truncated and clamped: a text shadow is clipped with the text, and
+ * ends in a rectangle. The widest blur is the 16px the overview's room
+ * (OVERVIEW_SHADE_ROOM_PX) was sized for.
  */
-const COPY_SHADOW =
-  "drop-shadow(0 0 1px rgba(0,0,0,0.95)) drop-shadow(0 1px 3px rgba(0,0,0,0.9)) drop-shadow(0 0 8px rgba(0,0,0,0.8)) drop-shadow(0 0 16px rgba(0,0,0,0.6))";
-
 function copyTextStyle(shade: number, restingAlpha: number): CSSProperties {
   const a = (value: number) => value.toFixed(3);
   return {
     color: `rgba(255,255,255,${a(restingAlpha + (0.97 - restingAlpha) * shade)})`,
-    filter: COPY_SHADOW,
+    filter: copyShadowFor(shade),
   };
 }
 
