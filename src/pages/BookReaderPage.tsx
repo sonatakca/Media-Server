@@ -79,6 +79,7 @@ import {
   guardCfiLocation,
   settleFailedDisplays,
 } from "./reader/epubDisplayGuard";
+import { WindowedViewManager } from "./reader/epubWindow";
 import {
   formatDuration,
   formatPercent,
@@ -851,7 +852,9 @@ export function BookReaderPage() {
     });
     guardCfiLocation();
     const rendition = book.renderTo(host, {
-      manager: "continuous",
+      // A window of sections around the reader, not the whole book in the
+      // page, that holds the reader's place as sections come and go.
+      manager: WindowedViewManager,
       width: "100%",
       height: "100%",
       flow: "scrolled-continuous",
