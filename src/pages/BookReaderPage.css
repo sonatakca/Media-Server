@@ -314,6 +314,44 @@ body:has(.seyirlik-reader-shell) {
     opacity 0.18s var(--rd-sine);
 }
 
+/* The ruler as a handle: press or drag anywhere along it to move through the
+   chapter. Wider than the line, and past its ends, so it is easy to catch. */
+.rd-ruler-grip {
+  position: absolute;
+  top: -0.75rem;
+  bottom: -0.75rem;
+  right: -1.75rem;
+  width: 5rem;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.rd-margin[data-covered] .rd-ruler-grip {
+  pointer-events: none;
+}
+
+.rd-margin:has(.rd-ruler-grip:hover) .rd-ruler-line,
+.rd-margin[data-dragging] .rd-ruler-line {
+  background: var(--rd-ink3);
+}
+
+/* Dragged, the marker stays under the pointer rather than easing after it. */
+.rd-margin[data-dragging] .rd-ruler-marker {
+  transition: none;
+}
+
+:root[data-ruler-drag],
+:root[data-ruler-drag] .rd-ruler-grip {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:root[data-ruler-drag] iframe {
+  pointer-events: none;
+}
+
 /* A leap (a new chapter, or most of this one) fades out, moves, fades in. */
 .rd-ruler-marker[data-switching] {
   opacity: 0;

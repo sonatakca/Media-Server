@@ -31,6 +31,7 @@ import {
   READER_THEMES,
   READER_THEME_LABEL_KEYS,
   WIDTH_PRESETS,
+  clamp,
   highlightSwatch,
   highlightWash,
   isHighlight,
@@ -1055,6 +1056,9 @@ export function ReaderBookCover({
 /** How long the margin takes to fade across a chapter change or a leap. */
 export const RULER_FADE_MS = 180;
 
+/** A drag on the ruler: pressed, moved, let go (or taken away). */
+export type RulerSeekPhase = "start" | "move" | "end";
+
 interface MarginChapter {
   chapter: BookChapter;
   next: BookChapter | null;
@@ -1066,6 +1070,9 @@ interface MarginChapter {
  * ruler beneath it. Either can be turned off. The marker is moved by the page
  * directly; when the chapter changes, the names and the scale fade out and
  * back in with the new chapter rather than snapping, in step with the marker.
+ *
+ * The ruler is also a handle: pressed or dragged, it reports the share of the
+ * chapter under the pointer, and the page scrolls the reading line there.
  */
 export const ReaderMargin = forwardRef<
   HTMLDivElement,
@@ -1074,12 +1081,71 @@ export const ReaderMargin = forwardRef<
     showRuler: boolean;
     timeLeft: string | null;
     bookLanguage: string;
+    onSeek: (fraction: number, phase: RulerSeekPhase) => void;
   }
 >(function ReaderMargin(
-  { chapter, next, chapterNumber, covered, showRuler, timeLeft, bookLanguage },
+  {
+    chapter,
+    next,
+    chapterNumber,
+    covered,
+    showRuler,
+    timeLeft,
+    bookLanguage,
+    onSeek,
+  },
   markerRef,
 ) {
   const { t } = useLanguage();
+  const marginRef = useRef<HTMLDivElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  // Read by the pointer handlers: a release and the lost capture that
+  // follows it arrive before the state has re-rendered.
+  const draggingRef = useRef(false);
+  const fractionAt = (clientY: number) => {
+    const box = marginRef.current?.getBoundingClientRect();
+    return box && box.height > 0
+      ? clamp((clientY - box.top) / box.height, 0, 1)
+      : 0;
+  };
+  // While dragged, the book's frames take no pointer: a drag that strays over
+  // the text must not lose its events to them.
+  const setDrag = (on: boolean) => {
+    draggingRef.current = on;
+    setDragging(on);
+    if (on) {
+      document.documentElement.dataset.rulerDrag = "true";
+    } else {
+      delete document.documentElement.dataset.rulerDrag;
+    }
+  };
+  useEffect(
+    () => () => {
+      delete document.documentElement.dataset.rulerDrag;
+    },
+    [],
+  );
+  const pressRuler = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || covered) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag(true);
+    onSeek(fractionAt(event.clientY), "start");
+  };
+  const dragRuler = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (draggingRef.current) {
+      onSeek(fractionAt(event.clientY), "move");
+    }
+  };
+  const releaseRuler = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) {
+      return;
+    }
+    setDrag(false);
+    onSeek(fractionAt(event.clientY), "end");
+  };
   // The chapter on display lags a change by one fade: while the keys differ
   // the old chapter fades out, then the new one takes its place and fades in.
   const [shown, setShown] = useState<MarginChapter>({
@@ -1117,9 +1183,11 @@ export const ReaderMargin = forwardRef<
 
   return (
     <div
+      ref={marginRef}
       className="rd-margin"
       data-covered={covered || undefined}
       data-ruler={showRuler || undefined}
+      data-dragging={dragging || undefined}
       aria-hidden="true"
     >
       {timeLeft ? (
@@ -1160,6 +1228,14 @@ export const ReaderMargin = forwardRef<
           <div ref={markerRef} className="rd-ruler-marker">
             <span />
           </div>
+          <div
+            className="rd-ruler-grip"
+            onPointerDown={pressRuler}
+            onPointerMove={dragRuler}
+            onPointerUp={releaseRuler}
+            onPointerCancel={releaseRuler}
+            onLostPointerCapture={releaseRuler}
+          />
         </>
       ) : null}
     </div>

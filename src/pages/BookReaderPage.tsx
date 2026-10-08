@@ -73,6 +73,7 @@ import {
   ReaderHighlightMenu,
   ReaderMoreMenu,
   ReaderSettingsPanel,
+  type RulerSeekPhase,
 } from "./reader/ReaderPanels";
 import {
   guardCfiLocation,
@@ -89,6 +90,7 @@ import {
   EPUB_PREPARATION_TIMEOUT_MS,
   EPUB_REQUEST_CREDENTIALS,
   READER_SETTINGS_KEY,
+  READING_LINE,
   SPOTLIGHT_FLOOR,
   clamp,
   flattenToc,
@@ -582,6 +584,12 @@ export function BookReaderPage() {
   );
   const measureColumnRef = useRef<() => void>(() => undefined);
   const markerRef = useRef<HTMLDivElement | null>(null);
+  /** Brings the reading line to a share of a chapter; set while a book is open. */
+  const seekChapterRef = useRef<
+    (chapterIndex: number, fraction: number) => void
+  >(() => undefined);
+  /** The chapter the ruler is being dragged through, or -1 when it is not. */
+  const rulerDragRef = useRef(-1);
   const settingsRef = useRef(settings);
   const panelRef = useRef<Panel>(null);
   const languageRef = useRef(language);
@@ -942,7 +950,12 @@ export function BookReaderPage() {
         : 0;
       const marker = markerRef.current;
 
-      if (marker) {
+      if (marker && rulerDragRef.current >= 0) {
+        // Dragged, the marker is under the pointer (seekRuler places it); the
+        // text catches up behind it.
+        markerState.chapterIndex = chapterIndex;
+        markerState.fraction = chapterFraction;
+      } else if (marker) {
         const top = `${chapterFraction * 100}%`;
         const text = formatPercent(chapterFraction, languageRef.current);
 
@@ -1725,6 +1738,112 @@ export function BookReaderPage() {
     };
 
     /**
+     * Brings the reading line to `fraction` of a chapter, as the ruler's
+     * marker would show it: the inverse of the marker's placement. A section
+     * already on the page is scrolled to directly. One that is not (a chapter
+     * spread over several) is displayed first, one at a time, and the latest
+     * place asked for meanwhile is taken once it is there.
+     */
+    let seekShowing = false;
+    let seekWanted: { chapterIndex: number; fraction: number } | null = null;
+    const seekChapter = (
+      chapterIndex: number,
+      fraction: number,
+      retries = 2,
+    ) => {
+      if (seekShowing) {
+        seekWanted = { chapterIndex, fraction };
+        return;
+      }
+      const chapter = map?.chapters[chapterIndex];
+      const scroller = host.querySelector<HTMLElement>(".epub-container");
+      if (!map || !chapter || !scroller || chapter.end <= chapter.start) {
+        return;
+      }
+      // Never quite the end: that is the next chapter's first line.
+      const location = Math.min(
+        chapter.start + (chapter.end - chapter.start) * fraction,
+        chapter.end - 0.01,
+      );
+      let section = chapter.spineIndex;
+      while (
+        section + 1 < map.sectionStarts.length &&
+        map.sectionStarts[section + 1] <= location
+      ) {
+        section += 1;
+      }
+      const start = map.sectionStarts[section] ?? 0;
+      const end = map.sectionStarts[section + 1] ?? map.total;
+      const within =
+        end > start ? clamp((location - start) / (end - start), 0, 1) : 0;
+      const frame = getRenditionContents(rendition).find(
+        (content) => content.sectionIndex === section,
+      )?.document.defaultView?.frameElement;
+
+      if (frame) {
+        const rect = frame.getBoundingClientRect();
+        const view = host.getBoundingClientRect();
+        const target =
+          scroller.scrollTop +
+          rect.top +
+          rect.height * within -
+          (view.top + view.height * READING_LINE);
+        scroller.scrollTop = target;
+        scheduleFrame();
+
+        // The page ended before the place: epub.js adds the next section as
+        // the scroll reaches the end, and the seek is made again once it has.
+        if (Math.abs(scroller.scrollTop - target) > 1 && retries > 0) {
+          const height = scroller.scrollHeight;
+          const started = performance.now();
+          seekShowing = true;
+          seekWanted = { chapterIndex, fraction };
+          const wait = () => {
+            if (
+              isMounted &&
+              scroller.scrollHeight === height &&
+              performance.now() - started < 600
+            ) {
+              window.setTimeout(wait, 50);
+              return;
+            }
+            seekShowing = false;
+            const wanted = seekWanted;
+            seekWanted = null;
+            if (wanted && isMounted) {
+              seekChapter(wanted.chapterIndex, wanted.fraction, retries - 1);
+            }
+          };
+          window.setTimeout(wait, 50);
+        }
+        return;
+      }
+
+      const href = (book.spine.get(section) as Section | null)?.href;
+      if (!href) {
+        return;
+      }
+      seekShowing = true;
+      seekWanted = { chapterIndex, fraction };
+      void displayWithin(href).then(async (shown) => {
+        if (shown && isMounted) {
+          await waitForLayoutToSettle(host);
+        }
+        seekShowing = false;
+        const wanted = seekWanted;
+        seekWanted = null;
+        const there = getRenditionContents(rendition).some(
+          (content) => content.sectionIndex === section,
+        );
+        // Shown and still not on the page: asking again would never end.
+        if (wanted && isMounted && there) {
+          seekChapter(wanted.chapterIndex, wanted.fraction);
+        }
+      });
+    };
+    seekChapterRef.current = seekChapter;
+
+    /**
      * Back on this page after reading elsewhere: if another device has since
      * saved a later place, the book moves there before anything here is saved.
      */
@@ -1839,6 +1958,7 @@ export function BookReaderPage() {
       book.destroy();
       scheduleFrameRef.current = () => undefined;
       showPassageRef.current = async () => undefined;
+      seekChapterRef.current = () => undefined;
       putOutShimmer();
       measureColumnRef.current = () => undefined;
       paintHighlightsRef.current = () => undefined;
@@ -2363,6 +2483,28 @@ export function BookReaderPage() {
   // The settings panel and the menu open over the right margin, and on a
   // phone the sheet opens over the foot.
   const marginCovered = panel === "settings" || panel === "more";
+  const readingChapter = reading?.chapterIndex ?? -1;
+  // A drag stays in the chapter it began in, whatever the reading line
+  // crosses on the way.
+  const seekRuler = (fraction: number, phase: RulerSeekPhase) => {
+    if (phase === "start") {
+      rulerDragRef.current = readingChapter;
+    }
+    const marker = markerRef.current;
+    if (rulerDragRef.current >= 0 && marker) {
+      marker.style.top = `${fraction * 100}%`;
+      const label = marker.firstElementChild;
+      if (label) {
+        label.textContent = formatPercent(fraction, language);
+      }
+    }
+    if (rulerDragRef.current >= 0) {
+      seekChapterRef.current(rulerDragRef.current, fraction);
+    }
+    if (phase === "end") {
+      rulerDragRef.current = -1;
+    }
+  };
   const timeLeftText = reading
     ? formatDuration(reading.minutesLeftInChapter, t)
     : "";
@@ -2698,6 +2840,7 @@ export function BookReaderPage() {
           showRuler={settings.showRuler}
           timeLeft={settings.showTimeLeft ? timeLeftText : null}
           bookLanguage={bookMeta.language}
+          onSeek={seekRuler}
         />
       ) : null}
 
