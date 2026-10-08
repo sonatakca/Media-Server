@@ -34,6 +34,12 @@ export const MAX_LOGO_SHADOW = 2;
 export const DEFAULT_LOGO_SHADOW = 1;
 
 /**
+ * A transparent, full-card logo layer rendered by the API. Poster cards use
+ * this instead of asking iOS WebKit to apply a live CSS filter to the logo.
+ */
+export const CARD_LOGO_OVERLAY_VARIANT = "card-logo-overlay-v1";
+
+/**
  * The layout an editor opens on when a title has never been adjusted.
  *
  * Deliberately close to where the untouched card already draws its logo, so
@@ -91,13 +97,13 @@ export function getLogoLayout(item?: MediaItem | null): LogoLayout | null {
  *
  * `reach` pads the box by the shadow's reach (`getLogoShadowReach`) and widens
  * it by as much, so the logo's own box, inside the padding, stays exactly
- * where the layout puts it. The padding is what keeps the shadow whole on
- * iPad. This box is positioned and stacked above the artwork, so once
- * anything beneath it is composited, WebKit gives it a layer of its own, and
- * that layer is as large as this box and no larger: whatever the shadow
- * painted outside it was cut off in straight lines. Children placed against
- * the logo's box belong inside an inner box, since the padding moves the
- * edges `absolute` children measure from.
+ * where the layout puts it. This box is positioned and stacked above the
+ * artwork, so WebKit may give it a layer as large as the box and no larger;
+ * the padding keeps normal filter output inside that layer. Production poster
+ * cards rasterize placed shadows on the server because iOS can also lose the
+ * transparent bitmap's alpha while applying a live filter, which geometry
+ * cannot repair. Children placed against the logo's box belong inside an inner
+ * box, since the padding moves the edges `absolute` children measure from.
  */
 export function getLogoLayoutStyle(
   layout: LogoLayout,
@@ -239,11 +245,11 @@ export function getLogoShadowFilter(
  *
  * The filter goes on an element around the logo, padded out by the shadow's
  * full reach and pulled back by the same negative margin, so its content box
- * is exactly where the logo was and nothing moves. Never on the `<img>`
- * itself: after an iPad had been in use for a while, iOS WebKit redrew the
- * filtered image clipped to the image's own box, and the shadow showed as a
- * tinted rectangle with straight edges. This box already holds every pixel of
- * the shadow, so clipping to it cuts nothing.
+ * is exactly where the logo was and nothing moves. This contains ordinary
+ * filter overflow for the artwork editor, heroes and non-own-API fallbacks.
+ * Placed own-API poster logos use `CARD_LOGO_OVERLAY_VARIANT` instead: real
+ * iPad WebKit can shadow the transparent bitmap's whole rectangle even when
+ * every compositing box already contains the filter output.
  */
 export function getLogoShadowFrameStyle(
   shadow: number,

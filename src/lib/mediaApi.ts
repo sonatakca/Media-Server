@@ -24,6 +24,7 @@ import type {
   TaskDto,
 } from "../api/ownApi/dto";
 import { buildClientCapabilities } from "./playback-planner/clientCapabilities";
+import { CARD_LOGO_OVERLAY_VARIANT, type LogoLayout } from "./logoLayout";
 import type {
   MediaItem,
   MediaLibrary,
@@ -142,6 +143,41 @@ export function getLogoImageUrl(
   maxWidth = 900,
 ): string {
   return imageUrl(itemId, "logo", tag, maxWidth);
+}
+
+/**
+ * Turns an own-API logo URL into a transparent, full-poster layer containing
+ * the placed logo and its already-rasterized shadow. Other image providers do
+ * not understand this variant, so callers retain their CSS fallback for them.
+ */
+export function getCardLogoOverlayImageUrl(
+  logoUrl: string,
+  layoutItemId: string,
+  layout: LogoLayout,
+  maxWidth: number,
+): string | null {
+  try {
+    const parsed = new URL(logoUrl, window.location.href);
+    if (!/\/ownAPI\/v1\/items\/[^/]+\/images\/logo$/.test(parsed.pathname)) {
+      return null;
+    }
+
+    parsed.searchParams.set("maxWidth", String(maxWidth));
+    parsed.searchParams.set("variant", CARD_LOGO_OVERLAY_VARIANT);
+    parsed.searchParams.set("layoutItemId", layoutItemId);
+    // The server reads the authoritative layout from the catalogue. This value
+    // only changes the browser URL when the operator moves or reshades a logo,
+    // so a week-long private image cache cannot retain the previous drawing.
+    parsed.searchParams.set(
+      "layout",
+      [layout.x, layout.y, layout.width, layout.shadow]
+        .map((value) => value.toFixed(6))
+        .join(","),
+    );
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function getThumbImageUrl(

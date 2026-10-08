@@ -13,6 +13,7 @@ import {
   getDisplayTitle,
 } from "../../lib/format";
 import {
+  getCardLogoOverlayImageUrl,
   getLogoImageUrl,
   getPrimaryImageUrl,
   getThumbImageUrl,
@@ -216,6 +217,10 @@ export function MobileMediaCard({
   );
 
   const logoLayout = getLogoLayout(item);
+  const logoOverlayUrl =
+    logoUrl && logoLayout && logoLayout.shadow > 0 && !isLandscape
+      ? getCardLogoOverlayImageUrl(logoUrl, item.Id, logoLayout, 440)
+      : null;
   const logoShadow = logoLayout
     ? getLogoShadowFrameStyle(logoLayout.shadow, PHONE_CARD_SHADOW_SCALE)
     : undefined;
@@ -280,7 +285,16 @@ export function MobileMediaCard({
 
           {/* A poster whose logo was placed in the artwork tool shows it there,
               at that size and shadow, exactly as the desktop card does. */}
-          {logoUrl && logoLayout && !isLandscape ? (
+          {logoOverlayUrl ? (
+            <img
+              data-logo-overlay="true"
+              src={logoOverlayUrl}
+              alt={mainTitle}
+              loading="lazy"
+              decoding="async"
+              className="pointer-events-none absolute inset-0 z-20 h-full w-full"
+            />
+          ) : logoUrl && logoLayout && !isLandscape ? (
             <div
               data-logo-layout="true"
               style={getLogoLayoutStyle(

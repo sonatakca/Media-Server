@@ -15,7 +15,17 @@ import {
   MAX_ARTWORK_WIDTH,
   clampArtworkWidth,
 } from "../../../lib/artworkSizes";
+import {
+  CARD_LOGO_OVERLAY_VARIANT,
+  clampLogoLayout,
+  type LogoLayout,
+} from "../../../lib/logoLayout";
 import { isPathInsideRoot } from "../../pathSecurity";
+import {
+  REFERENCE_CARD_WIDTH,
+  logoBox,
+  logoLayerSvg,
+} from "../share/posterCard";
 
 /**
  * Artwork storage spanning title-owned originals and generated cache variants.
@@ -72,6 +82,12 @@ export interface ImageStorage {
   /** A persistent, card-sized WebP derived from immutable original bytes. */
   getVariant(
     image: Pick<StoredImageBytes, "contentHash" | "storageKey">,
+    maxWidth: number,
+  ): Promise<StoredImageBytes>;
+  /** A transparent 2:3 card layer with the placed logo and shadow rasterized. */
+  getCardLogoOverlay(
+    image: Pick<StoredImageBytes, "contentHash" | "storageKey">,
+    layout: LogoLayout,
     maxWidth: number,
   ): Promise<StoredImageBytes>;
   remove(storageKey: string): Promise<void>;
@@ -409,6 +425,96 @@ export function createImageStorage({
     }
   }
 
+  async function createCardLogoOverlay(
+    image: Pick<StoredImageBytes, "contentHash" | "storageKey">,
+    layout: LogoLayout,
+    maxWidth: number,
+  ): Promise<StoredImageBytes> {
+    const width = normalizedVariantWidth(maxWidth);
+    const normalizedLayout = clampLogoLayout(layout);
+    const variantHash = createHash("sha256")
+      .update(
+        JSON.stringify([
+          CARD_LOGO_OVERLAY_VARIANT,
+          image.contentHash,
+          width,
+          normalizedLayout,
+        ]),
+      )
+      .digest("hex");
+    const storageKey = `${CARD_LOGO_OVERLAY_VARIANT}/${variantHash.slice(0, 2)}/${variantHash.slice(2, 4)}/${variantHash}-w${width}.webp`;
+    const absolutePath = path.join(root, storageKey);
+    const existing = await stat(absolutePath).catch(() => null);
+    if (existing?.isFile()) {
+      return {
+        contentHash: variantHash,
+        contentType: "image/webp",
+        sizeBytes: existing.size,
+        storageKey,
+      };
+    }
+
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.tmp`;
+    try {
+      const sourceBytes = await readFile(resolveStorageKey(image.storageKey));
+      const source = sharp(sourceBytes, { limitInputPixels: MAX_IMAGE_PIXELS });
+      const metadata = await source.metadata();
+      if (!metadata.width || !metadata.height) {
+        throw new Error("The logo has no size.");
+      }
+
+      // Embed only as many source pixels as this card can draw. Besides keeping
+      // the SVG small, this avoids asking librsvg to decode a multi-megapixel
+      // logo merely to paint it into a few hundred pixels.
+      const drawnWidth = Math.max(
+        1,
+        Math.ceil(
+          (logoBox(normalizedLayout, metadata.width, metadata.height).width *
+            width) /
+            REFERENCE_CARD_WIDTH,
+        ),
+      );
+      const logo = await source
+        .rotate()
+        .resize({ width: drawnWidth, withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      const svg = logoLayerSvg({
+        logo,
+        logoType: "image/png",
+        logoWidth: metadata.width,
+        logoHeight: metadata.height,
+        layout: normalizedLayout,
+        outputWidth: width,
+      });
+      const result = await sharp(Buffer.from(svg), {
+        limitInputPixels: MAX_IMAGE_PIXELS,
+      })
+        .webp({ lossless: true, effort: 4 })
+        .toFile(temporaryPath);
+      await rename(temporaryPath, absolutePath);
+      return {
+        contentHash: variantHash,
+        contentType: "image/webp",
+        sizeBytes: result.size,
+        storageKey,
+      };
+    } catch (error) {
+      await unlink(temporaryPath).catch(() => undefined);
+      const completed = await stat(absolutePath).catch(() => null);
+      if (completed?.isFile()) {
+        return {
+          contentHash: variantHash,
+          contentType: "image/webp",
+          sizeBytes: completed.size,
+          storageKey,
+        };
+      }
+      throw error;
+    }
+  }
+
   function resolveStorageKey(storageKey: string): string {
     if (storageKey.startsWith("media:")) {
       if (!resolvedMediaRoot) {
@@ -454,6 +560,24 @@ export function createImageStorage({
       if (existing) return existing;
 
       const request = createVariant(image, width).finally(() => {
+        variantRequests.delete(key);
+      });
+      variantRequests.set(key, request);
+      return request;
+    },
+
+    getCardLogoOverlay: (image, layout, maxWidth) => {
+      const width = normalizedVariantWidth(maxWidth);
+      const normalizedLayout = clampLogoLayout(layout);
+      const key = `${CARD_LOGO_OVERLAY_VARIANT}:${image.contentHash}:${width}:${JSON.stringify(normalizedLayout)}`;
+      const existing = variantRequests.get(key);
+      if (existing) return existing;
+
+      const request = createCardLogoOverlay(
+        image,
+        normalizedLayout,
+        width,
+      ).finally(() => {
         variantRequests.delete(key);
       });
       variantRequests.set(key, request);

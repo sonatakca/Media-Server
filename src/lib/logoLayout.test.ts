@@ -129,8 +129,8 @@ describe("shadow", () => {
   });
 
   it("puts the shadow on a frame that already holds all of it", () => {
-    // iOS WebKit can redraw a filtered element clipped to its own box, which
-    // cut the shadow into a hard-edged rectangle when the box was the image's.
+    // The live editor and fallback paths still keep ordinary filter overflow
+    // inside the element that a browser may composite.
     expect(getLogoShadowFrameStyle(0)).toBeUndefined();
     expect(getDropShadowReach(getLogoShadowFilter(1)!)).toBe(
       14 + 1.5 * 34 + 1.5 * 18,

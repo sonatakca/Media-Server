@@ -241,6 +241,50 @@ describe("image storage", () => {
     ).resolves.toMatchObject({ width: 520, format: "webp" });
   });
 
+  it("rasterizes a placed logo and its shadow into a transparent card layer", async () => {
+    const storage = createImageStorage({ imageRoot });
+    const logo = await sharp({
+      create: {
+        width: 120,
+        height: 60,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite([
+        {
+          input: Buffer.from(
+            '<svg width="120" height="60"><rect x="30" y="20" width="60" height="20" fill="white"/></svg>',
+          ),
+        },
+      ])
+      .png()
+      .toBuffer();
+    const original = await storage.store(logo, "image/png");
+    const layout = { x: 0.5, y: 0.8, width: 0.5, shadow: 1 };
+
+    const first = await storage.getCardLogoOverlay(original, layout, 440);
+    const second = await storage.getCardLogoOverlay(original, layout, 440);
+    const bytes = await readFile(storage.resolve(first.storageKey));
+    const metadata = await sharp(bytes).metadata();
+    const { data, info } = await sharp(bytes)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const alphaAt = (x: number, y: number) =>
+      data[(y * info.width + x) * info.channels + 3];
+
+    expect(second).toEqual(first);
+    expect(metadata).toMatchObject({
+      width: 440,
+      height: 660,
+      format: "webp",
+      hasAlpha: true,
+    });
+    expect(alphaAt(0, 0)).toBe(0);
+    expect(alphaAt(220, 528)).toBeGreaterThan(0);
+  });
+
   it("refuses content whose bytes are not an image", async () => {
     const storage = createImageStorage({ imageRoot });
     await expect(storage.store(HTML, "image/jpeg")).rejects.toThrow(

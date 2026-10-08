@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
+  getCardLogoOverlayImageUrl,
   getLogoImageUrl,
   getPrimaryImageUrl,
   getThumbImageUrl,
@@ -296,6 +297,14 @@ export function MediaCard({
   );
 
   const logoLayout = getLogoLayout(item);
+  const logoOverlayUrl =
+    logoUrl &&
+    logoLayout &&
+    logoLayout.shadow > 0 &&
+    variant !== "landscape" &&
+    !isEpisode
+      ? getCardLogoOverlayImageUrl(logoUrl, item.Id, logoLayout, 600)
+      : null;
   const logoShadowFrame = getLogoShadowFrameStyle(
     logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
   );
@@ -571,7 +580,16 @@ export function MediaCard({
 
     return (
       <>
-        {logoUrl && logoLayout ? (
+        {logoOverlayUrl ? (
+          <img
+            data-logo-overlay="true"
+            src={logoOverlayUrl}
+            alt={displayTitle}
+            loading="lazy"
+            decoding="async"
+            className="pointer-events-none absolute inset-0 z-20 h-full w-full"
+          />
+        ) : logoUrl && logoLayout ? (
           <div
             data-logo-layout="true"
             style={getLogoLayoutStyle(

@@ -2,6 +2,10 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { OwnApiError } from "../ownApiHandler";
 import { clampArtworkWidth } from "../../../lib/artworkSizes";
+import {
+  CARD_LOGO_OVERLAY_VARIANT,
+  type LogoLayout,
+} from "../../../lib/logoLayout";
 import type { RouteDefinition } from "../api/router";
 import {
   parseEnum,
@@ -106,6 +110,7 @@ export function createImageRoutes({
       contentType: string;
       storageKey: string;
     },
+    logoLayout?: LogoLayout,
   ): Promise<void> {
     const requestedWidth = parseOptionalNonNegativeInteger(
       context.url.searchParams.get("maxWidth"),
@@ -118,6 +123,24 @@ export function createImageRoutes({
     const maxWidth = requestedWidth
       ? clampArtworkWidth(requestedWidth)
       : requestedWidth;
+    const variant = context.url.searchParams.get("variant");
+    if (variant === CARD_LOGO_OVERLAY_VARIANT) {
+      if (!maxWidth || !logoLayout) {
+        throw new OwnApiError(
+          "INVALID_IMAGE_VARIANT",
+          "The card logo overlay needs a placed logo and a requested width.",
+          422,
+        );
+      }
+      const requestedImage = await imageStorage.getCardLogoOverlay(
+        image,
+        logoLayout,
+        maxWidth,
+      );
+      await serveImage(context, requestedImage);
+      return;
+    }
+
     const requestedImage = maxWidth
       ? await imageStorage.getVariant(image, maxWidth).catch(() => image)
       : image;
@@ -200,7 +223,31 @@ export function createImageRoutes({
         }
 
         if (!image) throw notFound();
-        await serveRequestedSize(context, image);
+
+        let logoLayout: LogoLayout | undefined;
+        if (
+          context.url.searchParams.get("variant") === CARD_LOGO_OVERLAY_VARIANT
+        ) {
+          if (imageType !== "logo") {
+            throw new OwnApiError(
+              "INVALID_IMAGE_VARIANT",
+              "The card logo overlay is only available for logos.",
+              422,
+            );
+          }
+          const layoutItemId = requireUuid(
+            context.url.searchParams.get("layoutItemId") ?? undefined,
+            "layoutItemId",
+          );
+          const layoutItem = await catalogue.getItem(
+            principal.userId,
+            layoutItemId,
+          );
+          if (!layoutItem?.logoLayout) throw notFound();
+          logoLayout = layoutItem.logoLayout;
+        }
+
+        await serveRequestedSize(context, image, logoLayout);
       },
     },
   ];

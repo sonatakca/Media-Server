@@ -123,6 +123,11 @@ function fakeStorage(): ImageStorage {
       contentType: "image/webp",
       sizeBytes: 10,
     }),
+    getCardLogoOverlay: async (image) => ({
+      ...image,
+      contentType: "image/webp",
+      sizeBytes: 10,
+    }),
     remove: async () => undefined,
   };
 }
