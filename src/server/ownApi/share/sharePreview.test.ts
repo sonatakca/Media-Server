@@ -98,7 +98,7 @@ describe("the link preview's page", () => {
     expect(await lookUpCard(ID, API, foreign)).toBeNull();
 
     const html = renderSharePreview(`/movies/${ID}`, null, API);
-    expect(html).toContain("Seyirlik | Kişisel Film ve Dizi İzleme Deneyimi");
+    expect(html).toContain("<title>Seyirlik</title>");
     expect(html).toContain("seyirlik-preview.png");
   });
 });
