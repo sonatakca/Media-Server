@@ -584,12 +584,25 @@ export function BookReaderPage() {
   );
   const measureColumnRef = useRef<() => void>(() => undefined);
   const markerRef = useRef<HTMLDivElement | null>(null);
+  // The margin mounts after the frame that charted the chapter, so a new
+  // marker asks for a frame of its own rather than waiting for a scroll.
+  const attachMarker = useCallback((marker: HTMLDivElement | null) => {
+    markerRef.current = marker;
+    if (marker) {
+      scheduleFrameRef.current();
+    }
+  }, []);
   /** Brings the reading line to a share of a chapter; set while a book is open. */
   const seekChapterRef = useRef<
     (chapterIndex: number, fraction: number) => void
   >(() => undefined);
   /** The chapter the ruler is being dragged through, or -1 when it is not. */
   const rulerDragRef = useRef(-1);
+  /** Where the reading line stands in its chapter (0–1), and where a drag has taken it. */
+  const chapterFractionRef = useRef(0);
+  const rulerFractionRef = useRef(0);
+  /** Ends a run of wheel turns over the ruler once they stop. */
+  const rulerWheelTimerRef = useRef(0);
   const settingsRef = useRef(settings);
   const panelRef = useRef<Panel>(null);
   const languageRef = useRef(language);
@@ -949,10 +962,11 @@ export function BookReaderPage() {
           )
         : 0;
       const marker = markerRef.current;
+      chapterFractionRef.current = chapterFraction;
 
       if (marker && rulerDragRef.current >= 0) {
-        // Dragged, the marker is under the pointer (seekRuler places it); the
-        // text catches up behind it.
+        // Dragged, the marker moves with the pointer (seekRuler places it);
+        // the text catches up behind it.
         markerState.chapterIndex = chapterIndex;
         markerState.fraction = chapterFraction;
       } else if (marker) {
@@ -2486,24 +2500,44 @@ export function BookReaderPage() {
   const readingChapter = reading?.chapterIndex ?? -1;
   // A drag stays in the chapter it began in, whatever the reading line
   // crosses on the way.
-  const seekRuler = (fraction: number, phase: RulerSeekPhase) => {
+  // A drag is relative, like a video's progress bar held anywhere: it starts
+  // from where the reader is, and only how far the pointer moves up or down
+  // says how far to go. A press alone goes nowhere.
+  const seekRuler = (phase: RulerSeekPhase, delta: number) => {
     if (phase === "start") {
       rulerDragRef.current = readingChapter;
+      rulerFractionRef.current = chapterFractionRef.current;
+      return;
     }
+    if (phase === "end") {
+      rulerDragRef.current = -1;
+      return;
+    }
+    // Wheel turns run together until they pause, as one drag would.
+    if (phase === "wheel") {
+      if (rulerDragRef.current < 0) {
+        rulerDragRef.current = readingChapter;
+        rulerFractionRef.current = chapterFractionRef.current;
+      }
+      window.clearTimeout(rulerWheelTimerRef.current);
+      rulerWheelTimerRef.current = window.setTimeout(() => {
+        rulerDragRef.current = -1;
+      }, 250);
+    }
+    if (rulerDragRef.current < 0 || delta === 0) {
+      return;
+    }
+    const fraction = clamp(rulerFractionRef.current + delta, 0, 1);
+    rulerFractionRef.current = fraction;
     const marker = markerRef.current;
-    if (rulerDragRef.current >= 0 && marker) {
+    if (marker) {
       marker.style.top = `${fraction * 100}%`;
       const label = marker.firstElementChild;
       if (label) {
         label.textContent = formatPercent(fraction, language);
       }
     }
-    if (rulerDragRef.current >= 0) {
-      seekChapterRef.current(rulerDragRef.current, fraction);
-    }
-    if (phase === "end") {
-      rulerDragRef.current = -1;
-    }
+    seekChapterRef.current(rulerDragRef.current, fraction);
   };
   const timeLeftText = reading
     ? formatDuration(reading.minutesLeftInChapter, t)
@@ -2832,7 +2866,7 @@ export function BookReaderPage() {
       currentChapter &&
       (settings.showRuler || settings.showTimeLeft) ? (
         <ReaderMargin
-          ref={markerRef}
+          ref={attachMarker}
           chapter={currentChapter}
           next={nextChapter}
           chapterNumber={chapterNumber}

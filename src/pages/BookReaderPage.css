@@ -314,8 +314,9 @@ body:has(.seyirlik-reader-shell) {
     opacity 0.18s var(--rd-sine);
 }
 
-/* The ruler as a handle: press or drag anywhere along it to move through the
-   chapter. Wider than the line, and past its ends, so it is easy to catch. */
+/* The ruler as a handle, held anywhere along it: the drag moves through the
+   chapter from where the reader is. Wider than the line, and past its ends,
+   so it is easy to catch. */
 .rd-ruler-grip {
   position: absolute;
   top: -0.75rem;

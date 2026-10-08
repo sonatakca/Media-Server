@@ -31,7 +31,6 @@ import {
   READER_THEMES,
   READER_THEME_LABEL_KEYS,
   WIDTH_PRESETS,
-  clamp,
   highlightSwatch,
   highlightWash,
   isHighlight,
@@ -1056,8 +1055,11 @@ export function ReaderBookCover({
 /** How long the margin takes to fade across a chapter change or a leap. */
 export const RULER_FADE_MS = 180;
 
-/** A drag on the ruler: pressed, moved, let go (or taken away). */
-export type RulerSeekPhase = "start" | "move" | "end";
+/**
+ * A drag on the ruler: pressed, moved, let go (or taken away); or a turn of
+ * the wheel over it, which moves the same way with no press.
+ */
+export type RulerSeekPhase = "start" | "move" | "end" | "wheel";
 
 interface MarginChapter {
   chapter: BookChapter;
@@ -1071,8 +1073,9 @@ interface MarginChapter {
  * directly; when the chapter changes, the names and the scale fade out and
  * back in with the new chapter rather than snapping, in step with the marker.
  *
- * The ruler is also a handle: pressed or dragged, it reports the share of the
- * chapter under the pointer, and the page scrolls the reading line there.
+ * The ruler is also a handle, held anywhere along it: it reports how far the
+ * pointer moves up or down, as a share of the ruler, and the page moves the
+ * reading line through the chapter by that much from where it was.
  */
 export const ReaderMargin = forwardRef<
   HTMLDivElement,
@@ -1081,7 +1084,7 @@ export const ReaderMargin = forwardRef<
     showRuler: boolean;
     timeLeft: string | null;
     bookLanguage: string;
-    onSeek: (fraction: number, phase: RulerSeekPhase) => void;
+    onSeek: (phase: RulerSeekPhase, delta: number) => void;
   }
 >(function ReaderMargin(
   {
@@ -1102,11 +1105,13 @@ export const ReaderMargin = forwardRef<
   // Read by the pointer handlers: a release and the lost capture that
   // follows it arrive before the state has re-rendered.
   const draggingRef = useRef(false);
-  const fractionAt = (clientY: number) => {
-    const box = marginRef.current?.getBoundingClientRect();
-    return box && box.height > 0
-      ? clamp((clientY - box.top) / box.height, 0, 1)
-      : 0;
+  const lastYRef = useRef(0);
+  /** The pointer's move since the last event, as a share of the ruler's height. */
+  const moveFrom = (clientY: number) => {
+    const height = marginRef.current?.getBoundingClientRect().height ?? 0;
+    const delta = height > 0 ? (clientY - lastYRef.current) / height : 0;
+    lastYRef.current = clientY;
+    return delta;
   };
   // While dragged, the book's frames take no pointer: a drag that strays over
   // the text must not lose its events to them.
@@ -1131,21 +1136,53 @@ export const ReaderMargin = forwardRef<
     }
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    lastYRef.current = event.clientY;
     setDrag(true);
-    onSeek(fractionAt(event.clientY), "start");
+    onSeek("start", 0);
   };
   const dragRuler = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (draggingRef.current) {
-      onSeek(fractionAt(event.clientY), "move");
+      onSeek("move", moveFrom(event.clientY));
     }
   };
   const releaseRuler = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!draggingRef.current) {
       return;
     }
+    onSeek("move", moveFrom(event.clientY));
     setDrag(false);
-    onSeek(fractionAt(event.clientY), "end");
+    onSeek("end", 0);
   };
+  // The wheel over the ruler turns it like a volume control, by as much as a
+  // drag of the same distance would. Not passive: the page must not scroll
+  // (and bounce) under it.
+  const gripRef = useRef<HTMLDivElement | null>(null);
+  const onSeekRef = useRef(onSeek);
+  useEffect(() => {
+    onSeekRef.current = onSeek;
+  });
+  useEffect(() => {
+    const grip = gripRef.current;
+    if (!grip) {
+      return undefined;
+    }
+    const turn = (event: WheelEvent) => {
+      event.preventDefault();
+      const height = marginRef.current?.getBoundingClientRect().height ?? 0;
+      if (draggingRef.current || height <= 0 || event.ctrlKey) {
+        return;
+      }
+      const lines =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? height
+            : 1;
+      onSeekRef.current("wheel", (event.deltaY * lines) / height);
+    };
+    grip.addEventListener("wheel", turn, { passive: false });
+    return () => grip.removeEventListener("wheel", turn);
+  }, [showRuler]);
   // The chapter on display lags a change by one fade: while the keys differ
   // the old chapter fades out, then the new one takes its place and fades in.
   const [shown, setShown] = useState<MarginChapter>({
@@ -1229,6 +1266,7 @@ export const ReaderMargin = forwardRef<
             <span />
           </div>
           <div
+            ref={gripRef}
             className="rd-ruler-grip"
             onPointerDown={pressRuler}
             onPointerMove={dragRuler}
