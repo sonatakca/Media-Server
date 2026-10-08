@@ -586,8 +586,7 @@ export const en = {
   "reader.search.preparingDetail":
     "The server prepares every book once, for everyone, and hasn't finished this one yet. It takes a few minutes; keep reading if you like, and search will be ready when you come back.",
   "reader.search.searching": "Searching…",
-  "reader.search.searchingDetail":
-    "If nobody has searched for a while, the server loads its search model first, so this first search takes a few seconds.",
+  "reader.search.searchingDetail": "The first search can take a few seconds.",
   "reader.search.noResults": "Nothing in this book matches that.",
   "reader.search.unavailable": "This book can't be searched.",
   "reader.search.failed":

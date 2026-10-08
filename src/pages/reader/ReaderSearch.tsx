@@ -102,10 +102,14 @@ export function ReaderSearch({
           <p className="rd-search-preparing-title">
             {t("reader.search.searching")}
           </p>
-          {slow ? <p>{t("reader.search.searchingDetail")}</p> : null}
           <div className="rd-search-meter" data-searching aria-hidden="true">
             <span />
           </div>
+          {slow ? (
+            <p className="rd-search-slow">
+              {t("reader.search.searchingDetail")}
+            </p>
+          ) : null}
         </div>
       );
     }

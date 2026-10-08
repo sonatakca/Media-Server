@@ -126,9 +126,13 @@ describe("searching inside the reader", () => {
     ).not.toBeInTheDocument();
 
     expect(
-      await screen.findByText(/loads its search model first/, undefined, {
-        timeout: 3000,
-      }),
+      await screen.findByText(
+        /first search can take a few seconds/,
+        undefined,
+        {
+          timeout: 3000,
+        },
+      ),
     ).toBeInTheDocument();
 
     await act(async () => answer({ state: "ready", hits: [HIT] }));

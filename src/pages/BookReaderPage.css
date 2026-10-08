@@ -1308,6 +1308,12 @@ body:has(.seyirlik-reader-shell) {
   }
 }
 
+/* Only a slow search explains itself, and it does so quietly, under the bar. */
+.rd-search-preparing .rd-search-slow {
+  margin-top: 0.75rem;
+  animation: rd-fade-in 0.6s var(--rd-out) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rd-search-meter[data-searching] {
     animation: rd-pending 1.6s var(--rd-sine) infinite alternate;
