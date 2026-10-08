@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { MediaItem } from "../lib/types";
+import { getLogoShadowReach } from "../lib/logoLayout";
 import { MediaCard } from "./MediaCard";
 
 vi.mock("framer-motion", () => ({
@@ -100,7 +101,13 @@ describe("media card logo layout", () => {
     const style = logoLayout().style;
     expect(style.left).toBe("25%");
     expect(style.top).toBe("40%");
-    expect(style.width).toBe("60%");
+    // Widened and padded by the shadow's reach, so the logo's own box inside
+    // stays 60% wide. On iPad this box becomes a layer as large as itself and
+    // no larger, and a bare 60% box cut the shadow off at its edges.
+    const reach = getLogoShadowReach(1);
+    expect(reach).toBe(92);
+    expect(style.width).toBe(`calc(60% + ${2 * reach}px)`);
+    expect(style.padding).toBe(`${reach}px`);
     // Anchored by its centre, which is what makes dragging track the pointer.
     expect(style.transform).toBe("translate(-50%, -50%)");
   });

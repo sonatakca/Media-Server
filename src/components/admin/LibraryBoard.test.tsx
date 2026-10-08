@@ -353,7 +353,7 @@ it("places a title's logo where it was adjusted to sit", async () => {
   await screen.findByText("Dune");
   const placed = container.querySelector('[style*="left: 50%"]') as HTMLElement;
   expect(placed?.style.top).toBe("25%");
-  expect(placed?.style.width).toBe("60%");
+  expect(placed?.style.width).toMatch(/^calc\(60% \+ \d+px\)$/);
   expect(placed?.querySelector("img")).toBeTruthy();
 });
 

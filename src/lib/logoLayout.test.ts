@@ -10,6 +10,7 @@ import {
   getLogoShadowBackdropStyle,
   getLogoShadowFilter,
   getLogoShadowFrameStyle,
+  getLogoShadowReach,
   getDropShadowReach,
   getLogoLayoutStyle,
   moveLogoLayout,
@@ -61,6 +62,20 @@ describe("layout geometry", () => {
       width: "60%",
       transform: "translate(-50%, -50%)",
     });
+  });
+
+  it("pads the placed box by the shadow's reach, keeping the logo where it was", () => {
+    expect(
+      getLogoLayoutStyle({ x: 0.25, y: 0.4, width: 0.6, shadow: 1 }, 92),
+    ).toEqual({
+      left: "25%",
+      top: "40%",
+      width: "calc(60% + 184px)",
+      padding: "92px",
+      transform: "translate(-50%, -50%)",
+    });
+    expect(getLogoShadowReach(1)).toBe(92);
+    expect(getLogoShadowReach(0)).toBe(0);
   });
 
   it("keeps a logo legible and smaller than the card", () => {

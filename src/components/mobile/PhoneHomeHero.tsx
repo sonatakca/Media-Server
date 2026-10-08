@@ -38,6 +38,7 @@ import {
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
   getLogoShadowFrameStyle,
+  getLogoShadowReach,
 } from "../../lib/logoLayout";
 import {
   getBackdropImageUrl,
@@ -279,26 +280,31 @@ function DeckCard({
         {logoUrl ? (
           <div
             className="pointer-events-none absolute z-20"
-            style={getLogoLayoutStyle(layout)}
+            style={getLogoLayoutStyle(
+              layout,
+              getLogoShadowReach(layout.shadow, shadowScale),
+            )}
           >
-            {logoBackdrop ? (
-              <span
-                aria-hidden="true"
-                style={logoBackdrop}
-                className="absolute inset-[6%] rounded-[45%]"
-              />
-            ) : null}
-            <div
-              data-logo-shadow="true"
-              style={logoShadow}
-              className="relative z-10"
-            >
-              <img
-                src={logoUrl}
-                alt=""
-                draggable={false}
-                className="block h-auto w-full select-none object-contain"
-              />
+            <div className="relative flow-root">
+              {logoBackdrop ? (
+                <span
+                  aria-hidden="true"
+                  style={logoBackdrop}
+                  className="absolute inset-[6%] rounded-[45%]"
+                />
+              ) : null}
+              <div
+                data-logo-shadow="true"
+                style={logoShadow}
+                className="relative z-10"
+              >
+                <img
+                  src={logoUrl}
+                  alt=""
+                  draggable={false}
+                  className="block h-auto w-full select-none object-contain"
+                />
+              </div>
             </div>
           </div>
         ) : (

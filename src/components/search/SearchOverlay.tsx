@@ -19,6 +19,7 @@ import {
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
   getLogoShadowFrameStyle,
+  getLogoShadowReach,
 } from "../../lib/logoLayout";
 import { getMediaArtwork } from "../../lib/mediaArtwork";
 import { getLatestMediaItems, searchItems } from "../../lib/mediaApi";
@@ -103,29 +104,34 @@ function ResultLogo({ item, logoUrl }: { item: MediaItem; logoUrl: string }) {
   return (
     <span
       data-logo-layout="true"
-      style={getLogoLayoutStyle(logoLayout)}
+      style={getLogoLayoutStyle(
+        logoLayout,
+        getLogoShadowReach(logoLayout.shadow),
+      )}
       className="pointer-events-none absolute block"
     >
-      {logoShadowBackdropStyle ? (
+      <span className="relative flow-root">
+        {logoShadowBackdropStyle ? (
+          <span
+            aria-hidden="true"
+            data-logo-shadow-backdrop="true"
+            style={logoShadowBackdropStyle}
+            className="absolute inset-[6%] rounded-[45%]"
+          />
+        ) : null}
         <span
-          aria-hidden="true"
-          data-logo-shadow-backdrop="true"
-          style={logoShadowBackdropStyle}
-          className="absolute inset-[6%] rounded-[45%]"
-        />
-      ) : null}
-      <span
-        data-logo-shadow="true"
-        style={logoShadowFrame}
-        className="relative block"
-      >
-        <img
-          src={logoUrl}
-          alt=""
-          aria-hidden="true"
-          loading="lazy"
-          className="block h-auto w-full object-contain"
-        />
+          data-logo-shadow="true"
+          style={logoShadowFrame}
+          className="relative block"
+        >
+          <img
+            src={logoUrl}
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            className="block h-auto w-full object-contain"
+          />
+        </span>
       </span>
     </span>
   );

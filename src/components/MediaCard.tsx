@@ -26,6 +26,7 @@ import {
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
   getLogoShadowFrameStyle,
+  getLogoShadowReach,
 } from "../lib/logoLayout";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
@@ -573,27 +574,32 @@ export function MediaCard({
         {logoUrl && logoLayout ? (
           <div
             data-logo-layout="true"
-            style={getLogoLayoutStyle(logoLayout)}
+            style={getLogoLayoutStyle(
+              logoLayout,
+              getLogoShadowReach(logoLayout.shadow),
+            )}
             className="pointer-events-none absolute z-20"
           >
-            {logoShadowBackdropStyle ? (
-              <span
-                aria-hidden="true"
-                data-logo-shadow-backdrop="true"
-                style={logoShadowBackdropStyle}
-                className="absolute inset-[6%] rounded-[45%]"
-              />
-            ) : null}
-            <div
-              data-logo-shadow="true"
-              style={logoShadowFrame}
-              className="relative z-10"
-            >
-              <img
-                src={logoUrl}
-                alt={displayTitle}
-                className="block h-auto w-full object-contain"
-              />
+            <div className="relative flow-root">
+              {logoShadowBackdropStyle ? (
+                <span
+                  aria-hidden="true"
+                  data-logo-shadow-backdrop="true"
+                  style={logoShadowBackdropStyle}
+                  className="absolute inset-[6%] rounded-[45%]"
+                />
+              ) : null}
+              <div
+                data-logo-shadow="true"
+                style={logoShadowFrame}
+                className="relative z-10"
+              >
+                <img
+                  src={logoUrl}
+                  alt={displayTitle}
+                  className="block h-auto w-full object-contain"
+                />
+              </div>
             </div>
           </div>
         ) : logoUrl ? (

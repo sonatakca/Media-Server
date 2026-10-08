@@ -124,7 +124,7 @@ it("draws each list thumbnail with its logo where it was placed", async () => {
   const placed = row.querySelector('[data-logo-layout="true"]') as HTMLElement;
   expect(placed.style.left).toBe("50%");
   expect(placed.style.top).toBe("30%");
-  expect(placed.style.width).toBe("60%");
+  expect(placed.style.width).toMatch(/^calc\(60% \+ \d+px\)$/);
 });
 
 it("reads only the chosen title again when it is opened, not the whole library", async () => {

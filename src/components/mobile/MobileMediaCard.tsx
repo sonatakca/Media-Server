@@ -29,6 +29,7 @@ import {
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
   getLogoShadowFrameStyle,
+  getLogoShadowReach,
 } from "../../lib/logoLayout";
 import type { MediaItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
@@ -282,28 +283,33 @@ export function MobileMediaCard({
           {logoUrl && logoLayout && !isLandscape ? (
             <div
               data-logo-layout="true"
-              style={getLogoLayoutStyle(logoLayout)}
+              style={getLogoLayoutStyle(
+                logoLayout,
+                getLogoShadowReach(logoLayout.shadow, PHONE_CARD_SHADOW_SCALE),
+              )}
               className="pointer-events-none absolute z-20"
             >
-              {logoShadowBackdrop ? (
-                <span
-                  aria-hidden="true"
-                  style={logoShadowBackdrop}
-                  className="absolute inset-[6%] rounded-[45%]"
-                />
-              ) : null}
-              <div
-                data-logo-shadow="true"
-                style={logoShadow}
-                className="relative z-10"
-              >
-                <img
-                  src={logoUrl}
-                  alt={mainTitle}
-                  loading="lazy"
-                  decoding="async"
-                  className="block h-auto w-full object-contain"
-                />
+              <div className="relative flow-root">
+                {logoShadowBackdrop ? (
+                  <span
+                    aria-hidden="true"
+                    style={logoShadowBackdrop}
+                    className="absolute inset-[6%] rounded-[45%]"
+                  />
+                ) : null}
+                <div
+                  data-logo-shadow="true"
+                  style={logoShadow}
+                  className="relative z-10"
+                >
+                  <img
+                    src={logoUrl}
+                    alt={mainTitle}
+                    loading="lazy"
+                    decoding="async"
+                    className="block h-auto w-full object-contain"
+                  />
+                </div>
               </div>
             </div>
           ) : logoUrl ? (

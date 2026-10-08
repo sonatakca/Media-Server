@@ -65,7 +65,9 @@ describe("a phone poster card's logo", () => {
     expect(placed).not.toBeNull();
     expect(placed.style.left).toBe("50%");
     expect(placed.style.top).toBe("13%");
-    expect(placed.style.width).toBe("86%");
+    // Padded by the shadow's reach, so its 86% logo box holds all of it.
+    expect(placed.style.width).toMatch(/^calc\(86% \+ \d+px\)$/);
+    expect(placed.style.padding).not.toBe("");
     const shadow = logo().closest('[data-logo-shadow="true"]') as HTMLElement;
     expect(shadow.style.filter).toContain("drop-shadow");
     expect(shadow.style.padding).not.toBe("");

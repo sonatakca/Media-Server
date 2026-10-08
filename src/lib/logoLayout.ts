@@ -86,18 +86,40 @@ export function getLogoLayout(item?: MediaItem | null): LogoLayout | null {
   return clampLogoLayout(layout);
 }
 
-/** Inline style placing the logo on a card, given a stored layout. */
-export function getLogoLayoutStyle(layout: LogoLayout): {
+/**
+ * Inline style placing the logo on a card, given a stored layout.
+ *
+ * `reach` pads the box by the shadow's reach (`getLogoShadowReach`) and widens
+ * it by as much, so the logo's own box, inside the padding, stays exactly
+ * where the layout puts it. The padding is what keeps the shadow whole on
+ * iPad. This box is positioned and stacked above the artwork, so once
+ * anything beneath it is composited, WebKit gives it a layer of its own, and
+ * that layer is as large as this box and no larger: whatever the shadow
+ * painted outside it was cut off in straight lines. Children placed against
+ * the logo's box belong inside an inner box, since the padding moves the
+ * edges `absolute` children measure from.
+ */
+export function getLogoLayoutStyle(
+  layout: LogoLayout,
+  reach = 0,
+): {
   left: string;
   top: string;
   width: string;
   transform: string;
+  padding?: string;
 } {
-  return {
+  const style = {
     left: `${layout.x * 100}%`,
     top: `${layout.y * 100}%`,
     width: `${layout.width * 100}%`,
     transform: "translate(-50%, -50%)",
+  };
+  if (!(reach > 0)) return style;
+  return {
+    ...style,
+    width: `calc(${layout.width * 100}% + ${2 * reach}px)`,
+    padding: `${reach}px`,
   };
 }
 
@@ -229,8 +251,18 @@ export function getLogoShadowFrameStyle(
 ): { filter: string; padding: string; margin: string } | undefined {
   const filter = getLogoShadowFilter(shadow, sizeScale);
   if (!filter) return undefined;
-  const reach = Math.ceil(getDropShadowReach(filter));
+  const reach = getLogoShadowReach(shadow, sizeScale);
   return { filter, padding: `${reach}px`, margin: `-${reach}px` };
+}
+
+/**
+ * How far past the logo its shadow can paint, in whole px; 0 with no shadow.
+ * The soft field behind a placed logo (`getLogoShadowBackdropStyle`) spills
+ * less far than the drop-shadows at every strength, so this holds it too.
+ */
+export function getLogoShadowReach(shadow: number, sizeScale = 1): number {
+  const filter = getLogoShadowFilter(shadow, sizeScale);
+  return filter ? Math.ceil(getDropShadowReach(filter)) : 0;
 }
 
 /**

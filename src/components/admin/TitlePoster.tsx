@@ -7,6 +7,7 @@ import {
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
   getLogoShadowFrameStyle,
+  getLogoShadowReach,
 } from "../../lib/logoLayout";
 
 /**
@@ -101,17 +102,22 @@ export function TitlePoster({
       {logo && layout ? (
         <div
           data-logo-layout="true"
-          style={getLogoLayoutStyle(layout)}
+          style={getLogoLayoutStyle(
+            layout,
+            getLogoShadowReach(layout.shadow, scale),
+          )}
           className="pointer-events-none absolute z-10"
         >
-          {backdrop ? (
-            <span
-              data-logo-shadow-backdrop="true"
-              style={backdrop}
-              className="absolute inset-[6%] rounded-[45%]"
-            />
-          ) : null}
-          {logo}
+          <div className="relative flow-root">
+            {backdrop ? (
+              <span
+                data-logo-shadow-backdrop="true"
+                style={backdrop}
+                className="absolute inset-[6%] rounded-[45%]"
+              />
+            ) : null}
+            {logo}
+          </div>
         </div>
       ) : (
         logo
