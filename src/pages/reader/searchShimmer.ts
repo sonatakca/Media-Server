@@ -1,9 +1,10 @@
 /**
  * The colour that writes a found passage out for the reader, and fades.
  *
- * Opening the book at a search result sends the reader's mark colour across
- * the passage, every line at once, left to right: a column of colour with a
- * bright glint at its front edge. Behind it the letters keep the mark colour,
+ * Opening the book at a search result writes the reader's mark colour into
+ * the passage one line after another, like a pen: a front of colour with a
+ * bright glint at its edge crosses a line left to right and, as it reaches
+ * the end, starts on the next. Behind it the letters keep the mark colour,
  * held long enough to be followed, then eased back into the ordinary ink.
  *
  * All of it is the text's own colour: CSS Custom Highlights, as the reader's
@@ -36,14 +37,18 @@ interface Line {
 }
 
 /**
- * The column takes this long to cross the longest line, glint included,
- * which keeps its front near 11 px a frame at 60 fps, well inside the 32 px
- * the reader's motion keeps to.
+ * The front writes at one steady pace (no easing per line, or it would pulse
+ * at every line), aiming to finish the passage in about SWEEP_MS: never
+ * slower than ~21 px a frame at 60 fps, so a short passage still reads as
+ * writing, and never faster than ~32 px a frame, where motion at 60 fps
+ * stops reading as continuous; a long passage just takes longer.
  */
-const SWEEP_MS = 1_400;
-/** At most this many lines are coloured as it crosses: the ones on screen. */
+const SWEEP_MS = 4_000;
+const SLOWEST_PX_PER_MS = 1.25;
+const FASTEST_PX_PER_MS = 1.9;
+/** At most this many lines are written: the ones on screen. */
 const MOST_LINES = 28;
-/** The passage holds the mark colour this long once the column has passed. */
+/** The passage holds the mark colour this long once the front has passed. */
 const HOLD_MS = 2_600;
 /** Then returns to ink over this long. */
 const RETURN_MS = 1_600;
@@ -248,13 +253,23 @@ export function shimmerPassage(
   };
   document.head.append(rule);
 
-  // The column crosses at one pace on every line, so the fronts stay level.
-  const widest = Math.max(...lines.map((line) => line.right - line.left));
-  const speed = (widest + GLINT[0].from * em) / SWEEP_MS;
-  const colourIn = reduced ? REDUCED_IN_MS : SWEEP_MS;
+  // One line after another: a line begins as the front reaches the end of
+  // the one above, whose glint then runs off its end.
+  const starts: number[] = [];
+  let distance = 0;
+  for (const line of lines) {
+    starts.push(distance);
+    distance += line.right - line.left;
+  }
+  distance += GLINT[0].from * em;
+  const speed = Math.min(
+    FASTEST_PX_PER_MS,
+    Math.max(SLOWEST_PX_PER_MS, distance / SWEEP_MS),
+  );
+  const colourIn = reduced ? REDUCED_IN_MS : distance / speed;
   const total = colourIn + HOLD_MS + RETURN_MS;
 
-  // Every phase runs on one clock, so the column, the hold and the return
+  // Every phase runs on one clock, so the writing, the hold and the return
   // stay together however the page is paused or slowed.
   const clock = document.createElement("i");
   clock.setAttribute("aria-hidden", "true");
@@ -265,7 +280,7 @@ export function shimmerPassage(
     duration: total,
   });
 
-  const runs = lines.map((line) => {
+  const runs = lines.map((line, index) => {
     const middle = (line.top + line.bottom) / 2;
     /** The text position at a distance along the line, kept on the line. */
     const at = (offset: number) =>
@@ -277,14 +292,19 @@ export function shimmerPassage(
         ),
         middle,
       );
-    return { width: line.right - line.left, at, start: at(0) };
+    return {
+      width: line.right - line.left,
+      at,
+      start: at(0),
+      begins: starts[index]!,
+    };
   });
 
-  /** Each line coloured from its start to the front, the glint on its last letters. */
+  /** Each line written so far coloured to its front, the glint on its last letters. */
   const write = (t: number) => {
     all.forEach((highlight) => highlight.clear());
-    const front = speed * t;
-    for (const { width, at, start } of runs) {
+    for (const { width, at, start, begins } of runs) {
+      const front = speed * t - begins;
       if (!start || front <= 0) continue;
       if (front - GLINT[0].from * em >= width) {
         // The glint has left the line: all of it is body.
