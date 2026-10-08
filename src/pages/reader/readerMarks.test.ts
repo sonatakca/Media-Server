@@ -10,6 +10,7 @@ import {
 } from "./readerModel";
 import {
   READER_MARKS_KEY,
+  READER_SYNC_MS,
   diffMarks,
   useReaderMarks,
   viewMarks,
@@ -64,6 +65,23 @@ function fakeServer(initial: ReaderBookmark[] = []) {
     },
   );
   return { rows, live };
+}
+
+/** The hook's sync interval, fired by hand: as if that much time had passed. */
+function captureSyncInterval() {
+  const ticks: Array<() => void> = [];
+  const real = window.setInterval.bind(window);
+  const spy = vi.spyOn(window, "setInterval").mockImplementation(((
+    handler: () => void,
+    ms?: number,
+  ) => {
+    if (ms === READER_SYNC_MS) ticks.push(handler);
+    return real(handler, ms);
+  }) as typeof window.setInterval);
+  return {
+    tick: () => act(() => ticks.forEach((handler) => handler())),
+    restore: () => spy.mockRestore(),
+  };
 }
 
 describe("reader marks", () => {
@@ -178,6 +196,57 @@ describe("reader marks", () => {
 
     act(() => window.dispatchEvent(new Event("online")));
     await waitFor(() => expect(server.rows.get("a")?.mark?.id).toBe("a"));
+  });
+
+  it("sends a change that failed again on its own while the book stays open", async () => {
+    const interval = captureSyncInterval();
+    try {
+      const server = fakeServer();
+      api.sendBookMarkChanges.mockRejectedValueOnce(
+        new OwnApiClientError({ status: 0, code: "NETWORK", message: "down" }),
+      );
+      const { result } = renderHook(() => useReaderMarks("book"));
+      await waitFor(() => expect(api.getBookMarks).toHaveBeenCalled());
+
+      act(() => result.current.commit((current) => [...current, mark("a")]));
+      await waitFor(() =>
+        expect(api.sendBookMarkChanges).toHaveBeenCalledTimes(1),
+      );
+      expect(server.rows.size).toBe(0);
+
+      // No tab switch, no "online" event: only time passing.
+      interval.tick();
+      await waitFor(() => expect(server.rows.get("a")?.mark?.id).toBe("a"));
+    } finally {
+      interval.restore();
+    }
+  });
+
+  it("takes another device's marks while the book stays open, and keeps the list when nothing changed", async () => {
+    const interval = captureSyncInterval();
+    try {
+      const server = fakeServer([mark("a")]);
+      const { result } = renderHook(() => useReaderMarks("book"));
+      await waitFor(() =>
+        expect(result.current.marks.map((entry) => entry.id)).toEqual(["a"]),
+      );
+
+      server.rows.set("b", { changedAt: MADE, mark: mark("b", { progress: 0.5 }) });
+      interval.tick();
+      await waitFor(() =>
+        expect(result.current.marks.map((entry) => entry.id)).toEqual(["a", "b"]),
+      );
+
+      const shown = result.current.marks;
+      const fetches = api.getBookMarks.mock.calls.length;
+      interval.tick();
+      await waitFor(() =>
+        expect(api.getBookMarks.mock.calls.length).toBe(fetches + 1),
+      );
+      expect(result.current.marks).toBe(shown);
+    } finally {
+      interval.restore();
+    }
   });
 
   it("drops a change the server refuses as invalid rather than stalling behind it", async () => {

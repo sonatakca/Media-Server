@@ -114,7 +114,7 @@ import {
   type ReaderPlace,
   type ReaderSettings,
 } from "./reader/readerModel";
-import { useReaderMarks } from "./reader/readerMarks";
+import { READER_SYNC_MS, useReaderMarks } from "./reader/readerMarks";
 import {
   getBookPosition,
   saveBookPosition,
@@ -361,6 +361,11 @@ interface Target {
 const POSITION_SEND_DELAY_MS = 1500;
 /** How long opening a book waits for the place saved on other devices. */
 const POSITION_FETCH_LIMIT_MS = 2000;
+/**
+ * Another device's place is taken only once the reader has left the page
+ * alone this long: a book never moves under someone who is scrolling.
+ */
+const CATCH_UP_IDLE_MS = 5000;
 
 /** Two saves of the same place have the same key, so a re-save is not a move. */
 function positionKey({
@@ -1917,6 +1922,37 @@ export function BookReaderPage() {
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("pagehide", handlePageHide);
 
+    /**
+     * The place keeps in step with the account while the book is open, not
+     * only when the page is left: a send that failed is sent again, a place
+     * reached during a long read goes out without waiting for the reader to
+     * stop, and a place read since on another device is taken, so a window
+     * left open never saves its old place over a newer one. A page that is
+     * never hidden (a desktop window behind another) would otherwise not
+     * hear of it until the reader scrolled it, too late.
+     */
+    const syncPosition = () => {
+      if (document.visibilityState === "hidden" || !isMounted) {
+        return;
+      }
+      sendPosition();
+      const selecting = getRenditionContents(rendition).some(
+        (content) => !(content.document.getSelection()?.isCollapsed ?? true),
+      );
+      if (
+        !selecting &&
+        rulerDragRef.current < 0 &&
+        performance.now() - lastScrollAt >= CATCH_UP_IDLE_MS
+      ) {
+        void catchUp();
+      }
+    };
+    const syncTimer = window.setInterval(syncPosition, READER_SYNC_MS);
+    // Back to this window, back from the browser's page cache, or back online.
+    window.addEventListener("focus", syncPosition);
+    window.addEventListener("pageshow", syncPosition);
+    window.addEventListener("online", syncPosition);
+
     void (async () => {
       try {
         const remote = await Promise.race([
@@ -1969,8 +2005,12 @@ export function BookReaderPage() {
       window.cancelAnimationFrame(frameId);
       // Leaving the book inside the app is leaving it too.
       sendPosition({ keepalive: true });
+      window.clearInterval(syncTimer);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("focus", syncPosition);
+      window.removeEventListener("pageshow", syncPosition);
+      window.removeEventListener("online", syncPosition);
       resizeObserver.disconnect();
       scrollElement?.removeEventListener("scroll", handleScroll);
       rendition.off("relocated", handleRelocated);

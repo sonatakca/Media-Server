@@ -23,6 +23,12 @@ import {
  * mark made offline is there at once and reaches the server when it can.
  */
 
+/**
+ * While a book is open its marks and place are sent and fetched this often,
+ * so every device of the account stays in step without the book being left.
+ */
+export const READER_SYNC_MS = 20_000;
+
 /** Per account and book: `${userId}:${itemId}`. */
 export const READER_MARKS_KEY = "seyirlik.reader.marks";
 
@@ -190,6 +196,19 @@ export function useReaderMarks(itemId: string | undefined): {
 } {
   const [marks, setMarks] = useState<ReaderBookmark[]>([]);
   const itemRef = useRef(itemId);
+  // A sync that brings nothing new keeps the same list, so the highlights
+  // are not painted again every time the marks are fetched.
+  const showMarks = useCallback((next: ReaderBookmark[]) => {
+    setMarks((current) =>
+      current.length === next.length &&
+      current.every((mark, index) => {
+        const other = next[index];
+        return mark.id === other.id && sameMark(mark, other);
+      })
+        ? current
+        : next,
+    );
+  }, []);
   const flightRef = useRef<{ again: boolean } | null>(null);
 
   const sync = useCallback((options: { keepalive?: boolean } = {}) => {
@@ -242,7 +261,7 @@ export function useReaderMarks(itemId: string | undefined): {
           );
           writeStored(item, stored);
           if (itemRef.current === item) {
-            setMarks(viewMarks(stored));
+            showMarks(viewMarks(stored));
           }
           if (stored.pending.length === 0 || sent.length === 0) {
             return;
@@ -255,7 +274,7 @@ export function useReaderMarks(itemId: string | undefined): {
         }
       }
     })();
-  }, []);
+  }, [showMarks]);
 
   const commit = useCallback(
     (change: (current: ReaderBookmark[]) => ReaderBookmark[]) => {
@@ -304,6 +323,14 @@ export function useReaderMarks(itemId: string | undefined): {
       }
     };
     const handleOnline = () => sync();
+    // While the book is open: what failed to send goes again, and what other
+    // devices changed arrives without the page having to be left first.
+    const handleInterval = () => {
+      if (document.visibilityState === "visible") {
+        sync();
+      }
+    };
+    const syncTimer = window.setInterval(handleInterval, READER_SYNC_MS);
     // Another tab of this browser changed them.
     const handleStorage = (event: StorageEvent) => {
       if (event.key === READER_MARKS_KEY) {
@@ -312,8 +339,11 @@ export function useReaderMarks(itemId: string | undefined): {
     };
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", handleInterval);
     window.addEventListener("storage", handleStorage);
     return () => {
+      window.clearInterval(syncTimer);
+      window.removeEventListener("focus", handleInterval);
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("storage", handleStorage);
