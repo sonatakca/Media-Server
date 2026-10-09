@@ -1,0 +1,71 @@
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { describe, expect, it, vi } from "vitest";
+import { HeroActions } from "./HeroActions";
+import type { MediaItem } from "../../lib/types";
+
+vi.mock("../../i18n/LanguageContext", () => ({
+  useLanguage: () => ({
+    t: (key: string) =>
+      ({
+        "common.details": "Details",
+        "myList.title": "My List",
+        "details.overview": "Overview",
+        "details.playFromBeginning": "Play from beginning",
+        "details.startOverShort": "Start over",
+      })[key] ?? key,
+  }),
+}));
+vi.mock("../FavouriteButton", () => ({
+  FavouriteButton: ({ className }: { className: string }) => (
+    <button className={className}>My List</button>
+  ),
+}));
+vi.mock("../../lib/offline/offlineLibrary", () => ({
+  isOfflineSupported: () => false,
+}));
+
+const fade = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+};
+function dock() {
+  return render(
+    <MemoryRouter>
+      <HeroActions
+        item={{ Id: "film", Name: "Film", Type: "Movie" } as MediaItem}
+        playTo="/watch/film"
+        playLabel="Continue"
+        onPlay={() => {}}
+        startOverTo="/watch/film?start=0"
+        detailsTo="/movies/film"
+        progress={null}
+        overviewId="overview"
+        hasOverview
+        isOverviewOpen={false}
+        onToggleOverview={() => {}}
+        fade={fade}
+      />
+    </MemoryRouter>,
+  );
+}
+
+describe("hero dock", () => {
+  it("fades the glass and all controls through one opacity boundary", () => {
+    const { container } = dock();
+    const surface = container.querySelector<HTMLElement>(".hero-dock")!;
+    expect(surface.style.opacity).toBe("0");
+    expect(
+      [...surface.querySelectorAll<HTMLElement>("*")].filter(
+        (e) => e.style.opacity,
+      ),
+    ).toEqual([]);
+  });
+  it("labels restart while keeping the explicit start=0 destination", () => {
+    dock();
+    const restart = screen.getByRole("link", { name: "Play from beginning" });
+    expect(restart).toHaveTextContent("Start over");
+    expect(restart).toHaveAttribute("href", "/watch/film?start=0");
+  });
+});

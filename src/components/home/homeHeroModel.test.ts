@@ -3,6 +3,7 @@ import {
   COPY_ROWS,
   HERO_MOTION,
   heroForm,
+  heroFrameRadius,
   heroDock,
   queueCount,
   queueTitleTransform,
@@ -354,5 +355,19 @@ describe("the approved tablet rhythm", () => {
       expect(queueIndices(0, 2, count)).toEqual([1]);
       expect(queueIndices(0, 1, count)).toEqual([]);
     }
+  });
+});
+
+describe("rounded travelling backdrops", () => {
+  it("keeps at least the preview's 12px corners throughout a trip", () => {
+    for (const scale of [0.136, 0.2, 0.5, 0.8, 0.95, 0.999, 1]) {
+      const visibleRadius = heroFrameRadius(scale, 0.136) * scale;
+      expect(visibleRadius).toBeGreaterThanOrEqual(12);
+      expect(visibleRadius).toBeLessThanOrEqual(16);
+    }
+  });
+  it("matches the preview and stage corners at both endpoints", () => {
+    expect(heroFrameRadius(0.136, 0.136) * 0.136).toBeCloseTo(12);
+    expect(heroFrameRadius(1, 0.136)).toBe(16);
   });
 });

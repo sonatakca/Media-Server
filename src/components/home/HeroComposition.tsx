@@ -24,6 +24,7 @@ import {
   QUEUE_TITLE_BOX,
   TITLE_SCALE,
   heroForm,
+  heroFrameRadius,
   queueTitleTransform,
   stageness,
   tallFootGradient,
@@ -71,9 +72,6 @@ export function createCompositionMotion(
     trailer: motionValue(0),
   };
 }
-
-/** The corner radius a miniature shows on screen, whatever its scale. */
-const QUEUE_RADIUS_PX = 12;
 
 /** The logo's shadow in a miniature, as it appears on screen. */
 const QUEUE_SHADOW_BLUR_PX = 5;
@@ -167,21 +165,19 @@ export function HeroComposition({
   );
   const title = getItemDisplayMetadata(item, language).title ?? item.Name;
 
-  const radius = useTransform(m.scale, (scale) => {
-    if (scale >= 0.999) return 0;
-    const towardsSlot = Math.min(1, Math.max(0, (1 - scale) / (1 - slotScale)));
-    return (QUEUE_RADIUS_PX * towardsSlot) / scale;
-  });
+  const radius = useTransform(m.scale, (scale) =>
+    heroFrameRadius(scale, slotScale),
+  );
+  const clipPath = useTransform(radius, (px) => `inset(0 round ${px}px)`);
   // A hairline that stays one pixel on screen at any scale, gone by the time
   // the frame fills the stage.
   const frameShadow = useTransform(m.scale, (scale) => {
     const presence = Math.min(1, Math.max(0, (0.55 - scale) / 0.35));
     if (presence <= 0) return "none";
-    return `inset 0 0 0 ${1 / scale}px rgba(255,255,255,${0.18 * presence})`;
+    return `inset 0 0 0 ${1 / scale}px rgba(205,211,219,${0.38 * presence})`;
   });
-  // The scrim is for the menu, and a miniature has none: it shows the
-  // artwork clean, and the shade grows in with the frame.
-  const scrimOpacity = useTransform(
+  // A tall poster's copy keeps its legibility veil as it grows onto the stage.
+  const footOpacity = useTransform(
     m.scale,
     [slotScale, Math.max(slotScale + 0.01, 0.6)],
     [0, 1],
@@ -275,6 +271,7 @@ export function HeroComposition({
         scale: m.scale,
         transformOrigin: "0 0",
         borderRadius: radius,
+        clipPath,
         boxShadow: frameShadow,
         opacity,
         zIndex,
@@ -318,17 +315,6 @@ export function HeroComposition({
         />
       ) : null}
 
-      {/* Legibility for the menu, in a band as tall as the hand-over at
-          the foot, so the artwork between them is not dimmed. */}
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          opacity: scrimOpacity,
-          background:
-            "linear-gradient(180deg, rgba(5,6,7,0.6) 0%, rgba(5,6,7,0.24) 5.5%, rgba(5,6,7,0) 12%)",
-        }}
-      />
       {/* On a tall stage the copy fills the lower third, over a poster's own
           lettering: the picture sinks into the room behind it there, eased
           so no line marks where the fall begins. A miniature shows its
@@ -337,7 +323,7 @@ export function HeroComposition({
         <motion.div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
-          style={{ opacity: scrimOpacity, background: footGradient }}
+          style={{ opacity: footOpacity, background: footGradient }}
         />
       ) : null}
 

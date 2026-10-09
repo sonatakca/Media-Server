@@ -562,6 +562,16 @@ export function stageness(scale: number, slotScale: number): number {
   return Math.min(1, Math.max(0, (scale - slotScale) / (end - slotScale)));
 }
 
+/** The frame's local radius; multiply by scale to get its visible corner. */
+export function heroFrameRadius(scale: number, slotScale: number): number {
+  const safeScale = Math.max(0.001, scale);
+  const onStage = Math.min(
+    1,
+    Math.max(0, (safeScale - slotScale) / (1 - slotScale)),
+  );
+  return (12 + 4 * onStage) / safeScale;
+}
+
 /** Quartic ease-in (alpha = t⁴) from clear to the page's background. */
 export const HANDOVER_GRADIENT =
   "linear-gradient(180deg, rgba(5,6,7,0) 0%, rgba(5,6,7,0.008) 30%, rgba(5,6,7,0.041) 45%, rgba(5,6,7,0.13) 60%, rgba(5,6,7,0.24) 70%, rgba(5,6,7,0.41) 80%, rgba(5,6,7,0.573) 87%, rgba(5,6,7,0.748) 93%, #050607 100%)";

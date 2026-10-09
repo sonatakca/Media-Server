@@ -6,7 +6,7 @@ import type { MediaItem } from "../../lib/types";
 export const PHONE_TITLE_HERO_SECTION = "relative w-full bg-[#050607] pb-6";
 /** The backdrop starts below the separate navbar, inside the 16px page gutter. */
 export const PHONE_TITLE_HERO_FRAME =
-  "relative mx-4 pt-[calc(3.5rem+env(safe-area-inset-top))]";
+  "phone-title-frame relative mx-4 pt-[calc(3.5rem+env(safe-area-inset-top))]";
 export const PHONE_TITLE_HERO_PICTURE =
   "relative aspect-video w-full overflow-hidden rounded-t-2xl";
 /** The logo lives below the backdrop, with sixteen pixels of space above it. */

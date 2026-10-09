@@ -47,3 +47,11 @@ with 16px top padding. Mirror the backdrop across its bottom edge, blur 30px at
 60% opacity behind the complete copy, and keep 24px below the description. The
 card has 16px side margins and rounded top and bottom corners. The back control
 sits evenly inside its top-left corner, a 38px visible circle in a 44px target.
+
+
+Follow-up: add a silver hairline to the floating artwork, remove the top navbar
+vignette while retaining individual logo/link shadows, and keep visible corner
+radii between 12px (preview) and 16px (stage) throughout carousel travel. Fade the
+centre dock as one surface, including glass and controls. Separate labelled
+lower actions by 4px, show the translated short restart label, and wrap overflow
+actions rather than truncate them.

@@ -5,7 +5,7 @@ import {
   releaseBottomChrome,
 } from "../../lib/layout/bottomChrome";
 import { Info, Play, RotateCcw } from "lucide-react";
-import { motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { useCroppedTransparentImage } from "../../hooks/useCroppedTransparentImage";
@@ -281,100 +281,128 @@ export function PhoneTitleHero({
           </motion.div>
         </div>
       </section>
-      {isRevealed && typeof document !== "undefined"
+      {typeof document !== "undefined"
         ? createPortal(
-            <div ref={dockRef} className={PHONE_TITLE_HERO_ACTIONS}>
-              <div className="hero-dock hero-dock-compact">
-                <span className={`flex ${PHONE_TITLE_HERO_PLAY} ${HERO_PRESS}`}>
-                  <Link
-                    to={playTo}
-                    onClick={handlePlay}
-                    aria-label={
-                      progress
-                        ? `${playLabel}, ${t("hero.timeLeft").replace("{time}", progress.left)}`
-                        : playLabel
-                    }
-                    className={`hero-dock-play ${HERO_PLAY} ${HERO_FOCUS}`}
-                  >
-                    <Play
-                      size={18}
-                      fill="currentColor"
-                      className="relative shrink-0"
-                    />
-                    <span className="relative truncate">
-                      {progress ? shortPlayLabel : playLabel}
-                    </span>
-                    {progress ? (
-                      <>
-                        <span
-                          className={`${PLAY_TIME_LEFT} relative shrink-0 text-xs text-zinc-500`}
-                        >
-                          <span aria-hidden="true">·&nbsp; </span>
-                          {t("hero.timeLeft").replace("{time}", progress.left)}
-                        </span>
-                        <span
-                          aria-hidden="true"
-                          className="hero-dock-watched"
-                          style={{
-                            width: `${Math.min(100, Math.max(0, progress.share * 100))}%`,
-                          }}
-                        />
-                      </>
-                    ) : null}
-                  </Link>
-                </span>
-                <div className={PHONE_TITLE_HERO_ROW}>
-                  {onShowDetails ? (
-                    <button
-                      type="button"
-                      onClick={onShowDetails}
-                      className={PHONE_TITLE_HERO_ACTION}
+            <AnimatePresence>
+              {isRevealed ? (
+                <motion.div
+                  ref={dockRef}
+                  className={PHONE_TITLE_HERO_ACTIONS}
+                  initial={{ opacity: 0 }}
+                  animate={{
+                    opacity: 1,
+                    transition: {
+                      duration: reduceMotion ? 0 : HERO_MOTION.copyEnterS,
+                    },
+                  }}
+                  exit={{
+                    opacity: 0,
+                    transition: {
+                      duration: reduceMotion ? 0 : HERO_MOTION.copyExitS,
+                    },
+                  }}
+                >
+                  <div className="hero-dock hero-dock-compact">
+                    <span
+                      className={`flex ${PHONE_TITLE_HERO_PLAY} ${HERO_PRESS}`}
                     >
-                      <Info size={PHONE_TITLE_ACTION_ICON} />
-                      <span>{t("common.details")}</span>
-                    </button>
-                  ) : null}
-                  {canStartOver ? (
-                    <span className="hero-dock-extra">
                       <Link
-                        to={`${playTo}${playTo.includes("?") ? "&" : "?"}start=0`}
-                        aria-label={t("details.playFromBeginning")}
-                        className={PHONE_TITLE_HERO_ACTION}
+                        to={playTo}
+                        onClick={handlePlay}
+                        aria-label={
+                          progress
+                            ? `${playLabel}, ${t("hero.timeLeft").replace("{time}", progress.left)}`
+                            : playLabel
+                        }
+                        className={`hero-dock-play ${HERO_PLAY} ${HERO_FOCUS}`}
                       >
-                        <RotateCcw
-                          size={PHONE_TITLE_ACTION_ICON}
-                          strokeWidth={2}
+                        <Play
+                          size={18}
+                          fill="currentColor"
+                          className="relative shrink-0"
                         />
+                        <span className="relative truncate">
+                          {progress ? shortPlayLabel : playLabel}
+                        </span>
+                        {progress ? (
+                          <>
+                            <span
+                              className={`${PLAY_TIME_LEFT} relative shrink-0 text-xs text-zinc-500`}
+                            >
+                              <span aria-hidden="true">·&nbsp; </span>
+                              {t("hero.timeLeft").replace(
+                                "{time}",
+                                progress.left,
+                              )}
+                            </span>
+                            <span
+                              aria-hidden="true"
+                              className="hero-dock-watched"
+                              style={{
+                                width: `${Math.min(100, Math.max(0, progress.share * 100))}%`,
+                              }}
+                            />
+                          </>
+                        ) : null}
                       </Link>
                     </span>
-                  ) : null}
-                  <span className={PHONE_TITLE_HERO_ACTION_SLOT}>
-                    <FavouriteButton
-                      item={item}
-                      iconSize={PHONE_TITLE_ACTION_ICON}
-                      showLabel
-                      shortLabel={t("myList.title")}
-                      className={PHONE_TITLE_HERO_ACTION}
-                    />
-                  </span>
-                  {/* The page's details own whether the title is watched; they
+                    <div className={PHONE_TITLE_HERO_ROW}>
+                      {onShowDetails ? (
+                        <button
+                          type="button"
+                          onClick={onShowDetails}
+                          className={PHONE_TITLE_HERO_ACTION}
+                        >
+                          <Info size={PHONE_TITLE_ACTION_ICON} />
+                          <span>{t("common.details")}</span>
+                        </button>
+                      ) : null}
+                      <span className={PHONE_TITLE_HERO_ACTION_SLOT}>
+                        <FavouriteButton
+                          item={item}
+                          iconSize={PHONE_TITLE_ACTION_ICON}
+                          showLabel
+                          shortLabel={t("myList.title")}
+                          className={PHONE_TITLE_HERO_ACTION}
+                        />
+                      </span>
+                      {/* The page's details own whether the title is watched; they
                 put their button here. */}
-                  <span
-                    ref={onWatchedSlot}
-                    className={PHONE_TITLE_HERO_ACTION_SLOT}
-                  />
-                  {item.Type === "Movie" && isOfflineSupported() ? (
-                    <span className="hero-dock-extra">
-                      <DownloadButton
-                        item={item}
-                        iconSize={PHONE_TITLE_ACTION_ICON}
-                        className={PHONE_TITLE_HERO_ACTION}
+                      <span
+                        ref={onWatchedSlot}
+                        className={PHONE_TITLE_HERO_ACTION_SLOT}
                       />
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </div>,
+                      {canStartOver ? (
+                        <span
+                          className={`${PHONE_TITLE_HERO_ACTION_SLOT} hero-dock-restart`}
+                        >
+                          <Link
+                            to={`${playTo}${playTo.includes("?") ? "&" : "?"}start=0`}
+                            aria-label={t("details.playFromBeginning")}
+                            className={PHONE_TITLE_HERO_ACTION}
+                          >
+                            <RotateCcw
+                              size={PHONE_TITLE_ACTION_ICON}
+                              strokeWidth={2}
+                            />
+                            <span>{t("details.startOverShort")}</span>
+                          </Link>
+                        </span>
+                      ) : null}
+                      {item.Type === "Movie" && isOfflineSupported() ? (
+                        <span className="hero-dock-extra">
+                          <DownloadButton
+                            item={item}
+                            iconSize={PHONE_TITLE_ACTION_ICON}
+                            className={PHONE_TITLE_HERO_ACTION}
+                          />
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
             document.body,
           )
         : null}

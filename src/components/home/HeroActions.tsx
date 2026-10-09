@@ -13,8 +13,7 @@ import { isOfflineSupported } from "../../lib/offline/offlineLibrary";
 import "./heroDock.css";
 
 /** A centre dock: play above labelled actions, on smoked glass over the artwork.
- * The glass stays opaque while the title's controls fade, avoiding WebKit's
- * blur discontinuity when a filtered surface is inside a translucent parent.
+ * One opacity boundary fades the glass and its controls together.
  */
 
 const FOCUS =
@@ -186,8 +185,14 @@ export function HeroActions({
     : t("hero.showOverview");
   const action = `hero-dock-action ${FOCUS}`;
   return (
-    <div className={`hero-dock ${compact ? "hero-dock-compact" : ""}`}>
-      <motion.span variants={fade} className={`flex ${PRESS}`}>
+    <motion.div
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      variants={fade}
+      className={`hero-dock ${compact ? "hero-dock-compact" : ""}`}
+    >
+      <span className={`flex ${PRESS}`}>
         <Link
           to={playTo}
           onClick={onPlay}
@@ -217,8 +222,8 @@ export function HeroActions({
             </span>
           ) : null}
         </Link>
-      </motion.span>
-      <motion.div variants={fade} className="hero-dock-row">
+      </span>
+      <div className="hero-dock-row">
         {onShowDetails ? (
           <button type="button" onClick={onShowDetails} className={action}>
             <Info size={16} />
@@ -264,9 +269,10 @@ export function HeroActions({
             to={startOverTo}
             aria-label={t("details.playFromBeginning")}
             title={t("details.playFromBeginning")}
-            className={`${action} hero-dock-extra`}
+            className={action}
           >
             <RotateCcw size={16} />
+            <span>{t("details.startOverShort")}</span>
           </Link>
         ) : null}
         {onShowDetails && item.Type === "Movie" && isOfflineSupported() ? (
@@ -276,7 +282,7 @@ export function HeroActions({
             className={`${action} hero-dock-extra`}
           />
         ) : null}
-      </motion.div>
-    </div>
+      </div>
+    </motion.div>
   );
 }

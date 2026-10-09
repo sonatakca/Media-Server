@@ -1,3 +1,18 @@
+/* Overlay outlines preserve the measured stage and the phone's flush reflection seam. */
+.seyirlik-hero-stage::after,
+.phone-title-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  border: 1px solid rgba(205, 211, 219, 0.38);
+  border-radius: 16px;
+  pointer-events: none;
+}
+.phone-title-frame::after {
+  top: calc(3.5rem + env(safe-area-inset-top));
+}
+
 /* One rhythm for the centre dock, tablet preview and phone title actions. */
 .hero-dock {
   --dock-pad: 7px;
@@ -58,17 +73,21 @@
 .hero-dock-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
   min-width: 0;
-  height: var(--dock-row);
+  min-height: var(--dock-row);
 }
-.hero-dock-row > * {
-  flex: 1;
-  min-width: 0;
+.hero-dock .hero-dock-row > * {
+  width: auto;
+  flex: 1 0 auto;
+  min-width: max-content;
 }
-.hero-dock-row > * + * {
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
+.hero-dock-row > :empty {
+  display: none;
 }
 .hero-dock-action {
+  position: relative;
   display: flex;
   width: 100%;
   height: var(--dock-row);
@@ -77,6 +96,7 @@
   gap: 5px;
   padding: 0 6px;
   border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.88);
   font-size: 12px;
   font-weight: 700;
@@ -97,10 +117,16 @@
   text-overflow: ellipsis;
 }
 .hero-dock-row > .hero-dock-extra {
-  flex: 0 0 28px;
+  flex: 0 0 32px;
   padding: 0;
 }
+.hero-dock-row > .hero-dock-action {
+  width: auto;
+}
 .hero-dock-story-dot {
+  position: absolute;
+  right: 5px;
+  top: 4px;
   width: 5px;
   height: 5px;
   flex-shrink: 0;
@@ -116,6 +142,11 @@
   opacity: 1;
   transform: scale(1);
 }
+.hero-dock-compact .hero-dock-action {
+  font-size: 11px;
+  padding: 0 4px;
+  gap: 4px;
+}
 .phone-title-dock {
   position: fixed;
   z-index: 45;
@@ -123,6 +154,9 @@
   width: min(300px, calc(100% - 32px));
   transform: translateX(-50%);
   bottom: calc(6.25rem + env(safe-area-inset-bottom));
+}
+.phone-title-dock .hero-dock-row:has(> .hero-dock-extra) > .hero-dock-restart {
+  flex-basis: calc(100% - 36px);
 }
 .phone-title-dock .hero-dock {
   --dock-row: 36px;
