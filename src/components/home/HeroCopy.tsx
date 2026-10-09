@@ -131,8 +131,10 @@ export function HeroCopyBlock({
             onFocusWithin(false);
         }}
       >
+        {/* The copy's rows are as wide as its column and reach past the
+            target's edge; only the target itself answers the pointer. */}
         <div
-          className="absolute"
+          className="pointer-events-none absolute"
           style={{
             left: HOVER_ROOM_PX.side,
             bottom: 0,
@@ -457,7 +459,7 @@ function HeroCopy({
       ) : null}
       {layout.form === "tall" ? (
         <div
-          className="absolute bottom-0"
+          className="pointer-events-auto absolute bottom-0"
           style={{
             width: heroDock(stage).width,
             left: (layout.copy.width - heroDock(stage).width) / 2,
