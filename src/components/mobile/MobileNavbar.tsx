@@ -40,7 +40,11 @@ export function MobileNavbar() {
   return (
     <>
       <header
-        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between  px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[background-color,border-color,backdrop-filter] duration-300 ${headerSurfaceClass}`}
+        // On a tablet the clear bar sits over the floating backdrop, which
+        // starts 8px down: its contents drop to the bar's foot to clear it.
+        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between  px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[background-color,border-color,backdrop-filter,padding] duration-300 ${headerSurfaceClass} ${
+          showHeaderSurface ? "" : "md:pb-0"
+        }`}
       >
         <Link
           to="/home"

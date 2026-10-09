@@ -86,7 +86,15 @@ export function DesktopNavbar() {
           : "duration-500 border-b border-transparent bg-transparent shadow-none backdrop-blur-0"
       }`}
     >
-      <nav className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 sm:h-20 sm:gap-8 sm:px-6 lg:px-8">
+      {/* Clear, the bar sits over a floating backdrop that starts 8px down,
+          so its contents drop by as much to stand as far inside its top edge
+          as inside its side. `top`, not a transform: a transform would
+          anchor the menus' fixed panels to the bar. */}
+      <nav
+        className={`relative mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 transition-[top] ease-out sm:h-20 sm:gap-8 sm:px-6 lg:px-8 ${
+          hasScrolled ? "top-0 duration-700" : "top-2 duration-500"
+        }`}
+      >
         <Link
           to="/home"
           className="flex min-w-0 shrink-0 items-center"
