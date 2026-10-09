@@ -35,14 +35,14 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ## Approved floating hero (October 9, 2026)
 
 The reviewed centre-dock prototype is the authority for this revision. Frame the
-clean artwork with 16px margins and 16px corners. Desktop keeps two larger
+clean artwork with an 8px top margin, 16px side/bottom margins and 16px corners. Desktop keeps two larger
 16:9 previews; landscape tablet keeps one preview at the dock's 102px height
 and uses the backdrop's 16:9 band. Play occupies the dock's top floor and
 labelled Details, My List and Overview occupy its lower floor. Preserve resume,
 start over, watched and offline actions where applicable.
 
 Logo, facts and overview share a 240ms sine-in-out clock, with immediate pointer
-leave collapse. On a phone title page, place the logo below the unshaded artwork
+leave collapse. On a phone title page, centre the logo below the unshaded artwork
 with 16px top padding. Mirror the backdrop across its bottom edge, blur 30px at
 60% opacity behind the complete copy, and keep 24px below the description. The
 card has 16px side margins and rounded top and bottom corners. The back control

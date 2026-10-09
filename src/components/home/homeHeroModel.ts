@@ -148,7 +148,7 @@ export type HeroForm = "wide" | "tall";
 export type HeroFit = "screen" | "mobile";
 
 export const HERO_HEIGHT_CLASS: Record<HeroFit, string> = {
-  screen: "h-[calc(100svh-2rem)] min-h-[36rem]",
+  screen: "h-[calc(100svh-1.5rem)] min-h-[36rem]",
   mobile: "aspect-video min-h-[20rem]",
 };
 

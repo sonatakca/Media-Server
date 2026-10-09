@@ -920,7 +920,7 @@ export function HomeHero({
     return (
       <section
         ref={sectionRef}
-        className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
+        className={`seyirlik-hero-stage relative mx-4 mt-2 mb-4 w-[calc(100%-2rem)] rounded-2xl bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
       />
     );
   }
@@ -928,7 +928,7 @@ export function HomeHero({
   return (
     <section
       ref={sectionRef}
-      className={`seyirlik-home-hero seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl touch-pan-y overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-home-hero seyirlik-hero-stage relative mx-4 mt-2 mb-4 w-[calc(100%-2rem)] rounded-2xl touch-pan-y overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
       aria-roledescription="carousel"
       aria-label={t("hero.featured")}
       onKeyDown={(event) => {

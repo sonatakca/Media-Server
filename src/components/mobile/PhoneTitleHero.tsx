@@ -252,13 +252,13 @@ export function PhoneTitleHero({
                     draggable={false}
                     onLoad={() => setIsLogoLoaded(true)}
                     onError={() => setIsLogoLoaded(false)}
-                    className={`block h-auto max-h-36 w-full select-none object-contain object-left-bottom transition-opacity duration-300 ${
+                    className={`block h-auto max-h-36 w-full select-none object-contain object-bottom transition-opacity duration-300 ${
                       isLogoLoaded ? "opacity-100" : "opacity-0"
                     }`}
                   />
                 </div>
               ) : (
-                <span className="text-cinematic-title line-clamp-2 text-[1.375rem] font-black uppercase leading-[0.9] text-white [font-stretch:78%]">
+                <span className="text-cinematic-title line-clamp-2 text-center text-[1.375rem] font-black uppercase leading-[0.9] text-white [font-stretch:78%]">
                   {title}
                 </span>
               )}

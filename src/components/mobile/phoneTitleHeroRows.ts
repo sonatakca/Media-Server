@@ -11,7 +11,7 @@ export const PHONE_TITLE_HERO_PICTURE =
   "relative aspect-video w-full overflow-hidden rounded-t-2xl";
 /** The logo lives below the backdrop, with sixteen pixels of space above it. */
 export const PHONE_TITLE_HERO_LOGO_BOX =
-  "relative mb-3 flex h-auto min-h-12 w-[min(18rem,100%)] items-end";
+  "relative mx-auto mb-3 flex h-auto min-h-12 w-[min(18rem,100%)] items-end justify-center";
 export const PHONE_TITLE_HERO_COPY =
   "relative isolate overflow-hidden rounded-b-2xl px-4 pt-4 pb-6";
 export const PHONE_TITLE_HERO_FACTS = "flex min-h-5 items-center";

@@ -226,7 +226,7 @@ export function TitleHero({
   return (
     <section
       ref={sectionRef}
-      className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-hero-stage relative mx-4 mt-2 mb-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
     >
       {stage && layout ? (
         <HeroComposition

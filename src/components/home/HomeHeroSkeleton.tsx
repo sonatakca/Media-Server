@@ -197,7 +197,7 @@ export function HomeHeroSkeleton({ fit = "screen" }: { fit?: HeroFit }) {
   return (
     <section
       ref={ref}
-      className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-hero-stage relative mx-4 mt-2 mb-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
     >
       <HomeHeroSkeletonBackdrop />
       {stage ? <HomeHeroSkeletonPieces stage={stage} /> : null}
@@ -237,7 +237,7 @@ export function TitleHeroSkeleton({
   return (
     <section
       ref={ref}
-      className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-hero-stage relative mx-4 mt-2 mb-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
     >
       <HomeHeroSkeletonBackdrop />
       {stage ? (
