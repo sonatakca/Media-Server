@@ -1,4 +1,10 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import {
+  bakeShadowBlobs,
+  type BakedShadowBlob,
+  type BakedShadowBlobs,
+  type ShadowBakeRequest,
+} from "./logoShadowBake";
 
 export interface BakedShadow {
   url: string;
@@ -17,9 +23,11 @@ const EMPTY: LogoShadows = {
   queue: null,
 };
 
-/** WebKit can corrupt live filters during scaled, clipped carousel travel.
- * Rasterise only the black alpha shadows once; travel animates plain images.
- * Canvas shadowBlur is supported on Safari too (unlike Canvas filter).
+/** WebKit can corrupt live filters during scaled, clipped carousel travel,
+ * so a logo's shadows are baked into plain images (see logoShadowBake). The
+ * baking runs in a worker: a new preview mounts mid-travel, and its encodes
+ * on the main thread dropped frames. Images, not canvases: Chromium gives
+ * every canvas its own layer, which the frame's rounded clip made costly.
  */
 export function useBakedLogoShadows(
   source: string,
@@ -62,7 +70,7 @@ function release(shadows: LogoShadows) {
   }
 }
 
-export async function bakeLogoShadows(
+async function bakeLogoShadows(
   source: string,
   boxWidth: number,
   maxHeight: number,
@@ -71,75 +79,100 @@ export async function bakeLogoShadows(
   const response = await fetch(source, { credentials: "include" });
   if (!response.ok)
     throw new Error(`Logo shadow request failed: ${response.status}`);
-  const bitmap = await createImageBitmap(await response.blob());
-  const made: BakedShadow[] = [];
-  try {
-    const width = Math.min(bitmap.width, 1100);
-    const height = Math.max(
-      1,
-      Math.round((bitmap.height * width) / bitmap.width),
-    );
-    // Shadow sizes are in the title box's px; the logo is drawn across the
-    // box's width unless its height cap makes it narrower.
-    const aspect = bitmap.width / bitmap.height;
-    const px = width / Math.min(boxWidth, maxHeight * aspect);
-    const draw = async (
-      layers: { blur: number; dy: number; alpha: number }[],
-    ) => {
-      const pad =
-        Math.ceil(
-          Math.max(...layers.map((s) => (3 * s.blur + Math.abs(s.dy)) * px)),
-        ) + 2;
-      const canvas = document.createElement("canvas");
-      canvas.width = width + pad * 2;
-      canvas.height = height + pad * 2;
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("No logo shadow canvas context");
-      // The source paints outside the canvas; only its shadow lands inside it.
-      const offset = canvas.width + width + pad;
-      for (const layer of layers) {
-        context.shadowColor = `rgba(0,0,0,${layer.alpha})`;
-        context.shadowBlur = layer.blur * px * 2;
-        context.shadowOffsetX = offset;
-        context.shadowOffsetY = layer.dy * px;
-        context.drawImage(bitmap, pad - offset, pad, width, height);
-      }
-      const blob = await new Promise<Blob>((resolve, reject) =>
-        canvas.toBlob(
-          (b) => (b ? resolve(b) : reject(new Error("No logo shadow blob"))),
-          "image/png",
-        ),
-      );
-      const image = {
-        url: URL.createObjectURL(blob),
-        style: {
-          left: `${(-100 * pad) / width}%`,
-          top: `${(-100 * pad) / height}%`,
-          width: `${(100 * canvas.width) / width}%`,
-          height: `${(100 * canvas.height) / height}%`,
-          maxWidth: "none",
-        },
-      };
-      made.push(image);
-      return image;
-    };
-    const base = await draw([{ blur: 30, dy: 6, alpha: 0.55 }]);
-    const halo = await draw([
-      { blur: 3, dy: 0, alpha: 0.55 },
-      { blur: 22, dy: 0, alpha: 0.6 },
-    ]);
-    const queue = await draw([
-      {
-        blur: 5 / Math.max(queueScale, 0.01),
-        dy: 2 / Math.max(queueScale, 0.01),
-        alpha: 1,
-      },
-    ]);
-    return { aspect, base, halo, queue };
-  } catch (error) {
-    made.forEach((image) => URL.revokeObjectURL(image.url));
-    throw error;
-  } finally {
+  const logo = await response.blob();
+  const bitmap = await createImageBitmap(logo);
+  // The logo is drawn across the title box's width unless its height cap
+  // makes it narrower; shadow sizes are in that box's px.
+  const aspect = bitmap.width / bitmap.height;
+  const request = {
+    drawnWidth: Math.min(boxWidth, maxHeight * aspect),
+    queueScale,
+  };
+  const blobs = await bakeInWorker(bitmap, request).catch(async () => {
+    // The bitmap may already have moved to the worker; draw from a new one.
     bitmap.close();
+    const own = await createImageBitmap(logo);
+    try {
+      return await bakeShadowBlobs(own, request, (width, height) =>
+        Object.assign(document.createElement("canvas"), { width, height }),
+      );
+    } finally {
+      own.close();
+    }
+  });
+  return {
+    aspect,
+    base: toImage(blobs.base),
+    halo: toImage(blobs.halo),
+    queue: toImage(blobs.queue),
+  };
+}
+
+function toImage({ blob, box }: BakedShadowBlob): BakedShadow {
+  return {
+    url: URL.createObjectURL(blob),
+    style: {
+      left: `${box.left * 100}%`,
+      top: `${box.top * 100}%`,
+      width: `${box.width * 100}%`,
+      height: `${box.height * 100}%`,
+      maxWidth: "none",
+    },
+  };
+}
+
+type WorkerReply = { id: number } & (
+  | { shadows: BakedShadowBlobs }
+  | { error: string }
+);
+
+let worker: Worker | null | undefined;
+let nextId = 0;
+const pending = new Map<
+  number,
+  { resolve: (shadows: BakedShadowBlobs) => void; reject: () => void }
+>();
+
+/** One worker for every hero. Rejects, keeping the bitmap, if it can't run. */
+function bakeInWorker(
+  bitmap: ImageBitmap,
+  request: ShadowBakeRequest,
+): Promise<BakedShadowBlobs> {
+  if (worker === undefined) worker = startWorker();
+  const running = worker;
+  if (!running) return Promise.reject(new Error("No shadow worker"));
+  return new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    // The bitmap moves to the worker and is closed there.
+    running.postMessage({ id, bitmap, ...request }, [bitmap]);
+  });
+}
+
+function startWorker(): Worker | null {
+  if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined")
+    return null;
+  try {
+    const started = new Worker(
+      new URL("./logoShadow.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    started.onmessage = (event: MessageEvent<WorkerReply>) => {
+      const reply = event.data;
+      const waiting = pending.get(reply.id);
+      pending.delete(reply.id);
+      if (!waiting) return;
+      if ("shadows" in reply) waiting.resolve(reply.shadows);
+      else waiting.reject();
+    };
+    started.onerror = () => {
+      // A worker that cannot start fails every request; stop using it.
+      worker = null;
+      for (const waiting of pending.values()) waiting.reject();
+      pending.clear();
+    };
+    return started;
+  } catch {
+    return null;
   }
 }
