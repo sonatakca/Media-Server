@@ -49,9 +49,9 @@ describe("readerModel", () => {
       lineHeight: 1.25,
       width: 48,
       spotlight: "soft",
-      lightShape: "paragraph",
+      lightShape: "line",
       paragraphReach: 0.3,
-      lineReach: 0.18,
+      lineReach: 0.85,
       showRuler: true,
       showTimeLeft: true,
     });
@@ -99,9 +99,9 @@ describe("readerModel", () => {
       lineHeight: 1.7,
       width: 74,
       spotlight: "soft",
-      lightShape: "paragraph",
+      lightShape: "line",
       paragraphReach: 0.3,
-      lineReach: 0.18,
+      lineReach: 0.85,
       showRuler: true,
       showTimeLeft: true,
     });

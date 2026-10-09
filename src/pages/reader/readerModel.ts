@@ -180,9 +180,9 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   lineHeight: 1.65,
   width: 66,
   spotlight: "soft",
-  lightShape: "paragraph",
+  lightShape: "line",
   paragraphReach: 0.3,
-  lineReach: 0.18,
+  lineReach: 0.85,
   showRuler: true,
   showTimeLeft: true,
 };
@@ -200,9 +200,10 @@ export const WIDTH_PRESETS = [56, 66, 78];
 export const READING_LINE = 0.4;
 /**
  * Seven reaches for each light, narrowest first, each about half as wide
- * again as the one before; the third is the default. The last two run past
- * the screen: at the widest the light is still falling off a screen and a
- * half away, so the page is nearly evenly lit.
+ * again as the one before. The light falls on the line by default, at the
+ * sixth line reach; the paragraph light defaults to its third. The last two
+ * run past the screen: at the widest the light is still falling off a screen
+ * and a half away, so the page is nearly evenly lit.
  */
 export const PARAGRAPH_REACH_PRESETS = [0.1, 0.2, 0.3, 0.45, 0.7, 1, 1.5];
 export const LINE_REACH_PRESETS = [0.05, 0.1, 0.18, 0.3, 0.5, 0.85, 1.5];

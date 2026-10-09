@@ -353,7 +353,7 @@ export class ReadingLight {
   private readonly documents = new Map<Document, LitDocument>();
   private floor = 1;
   private shape: ReaderLightShape = DEFAULT_READER_SETTINGS.lightShape;
-  private reach = DEFAULT_READER_SETTINGS.paragraphReach;
+  private reach = DEFAULT_READER_SETTINGS.lineReach;
   private fading = false;
   /** The blocks given a layer of their own last frame (see `frame`). */
   private layered = new Set<HTMLElement>();
