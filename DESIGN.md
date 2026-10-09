@@ -242,7 +242,7 @@ The screening room and the control booth use different spatial grammars on the s
 
 Elevation is deliberately hybrid, split along the Screening Room / Control Booth line rather than applied uniformly.
 
-**Screening room:** a full named shadow vocabulary carries real depth — `cinematic-card` / `cinematic-card-hover` under posters, `floating-panel` under overlays, `navbar-glass` under the scrolled header, `artwork-glow` and `player-controls` around playback chrome, `button-glow` under primary CTAs — layered, soft-edged (30–120px blur), and darker/more dramatic on hover. Interactive chrome floated over media (icon buttons, segmented toolbars, pill inputs) is glassed: `backdrop-blur-2xl` over a near-black translucent fill. Hover states add an accent-tinted glow via `color-mix()` rather than a flat color shift.
+**Screening room:** a full named shadow vocabulary carries real depth — `cinematic-card` / `cinematic-card-hover` under posters, `floating-panel` under overlays, `artwork-glow` and `player-controls` around playback chrome, `button-glow` under primary CTAs — layered, soft-edged (30–120px blur), and darker/more dramatic on hover. Interactive chrome floated over media (icon buttons, segmented toolbars, pill inputs) is glassed: `backdrop-blur-2xl` over a near-black translucent fill. Hover states add an accent-tinted glow via `color-mix()` rather than a flat color shift.
 
 **Control booth:** flat by contrast. Depth is conveyed by a hairline border and a faint fill-opacity step (`bg-white/[0.03]`), not by shadow or blur. No glass, no glow — clarity and scan speed outrank atmosphere here.
 
@@ -253,7 +253,6 @@ Elevation is deliberately hybrid, split along the Screening Room / Control Booth
 - **Cinematic Card** (`--shadow-cinematic-card`): rest state under posters and media cards.
 - **Cinematic Card Hover** (`--shadow-cinematic-card-hover`): deeper, accent-tinted, on hover/focus.
 - **Floating Panel** (`--shadow-floating-panel`): modals, overlays, the notification stack.
-- **Navbar Glass** (`--shadow-navbar-glass`): the header once scrolled.
 - **Artwork Glow** (`--shadow-artwork-glow`): large hero/backdrop art.
 - **Player Controls** (`--shadow-player-controls`): floating playback chrome.
 - **Button Glow** (`--shadow-button-glow`): primary calls to action.
@@ -347,7 +346,7 @@ The reader (`src/pages/BookReaderPage.tsx`, `BookReaderPage.css`, `src/pages/rea
 
 ### Navigation
 
-Transparent over the hero, becomes an opaque glass bar (`navbar-glass` shadow, `backdrop-blur-2xl`, `bg-black/75`) once the page scrolls. Active link state is plain white text, not the accent color — Seyirlik Teal is reserved for hover/focus/progress signaling, never for "you are here."
+Clear at the top of the page. As the page scrolls the bar is lit like the top of a dark room rather than given a panel: the page's own black falls from the screen's top edge and thins on an eased curve to nothing 3rem below the bar (2.25rem on phones), with a light 14px blur behind the links only that is gone before the bar's foot, so nothing below the links is smeared and there is no edge, line or shadow (`src/components/NavbarSurface.tsx`). It follows the scroll rather than a clock: it is fully present after 64px and exactly as present as the page has moved before that, in either direction. Each layer fades itself, never their parent, which would become the blur's backdrop root and make it snap. A phone page with no artwork under the bar has the ceiling from the start. The contents still drop 8px while the bar is clear and rise as it fills. Language, notifications, downloads, administration, theme and logout live in the account menu, not in the bar; language is a two-way switch naming each language in its own name (Türkçe, English). Active link state is plain white text, not the accent color — Seyirlik Teal is reserved for hover/focus/progress signaling, never for "you are here."
 
 ## Do's and Don'ts
 

@@ -320,6 +320,8 @@ export const en = {
   "nav.books": "Books",
   "nav.account": "Account",
   "nav.logout": "Logout",
+  "nav.language": "Language",
+  "nav.notifications": "Notifications",
   "nav.language.switchToTurkish": "Switch to Turkish",
   "nav.language.switchToEnglish": "Switch to English",
   "nav.language.ariaToTurkish": "Switch language to Turkish",

@@ -3,8 +3,17 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { AccountMenu } from "./AccountMenu";
 
+const { setLanguage, openNotificationHistory } = vi.hoisted(() => ({
+  setLanguage: vi.fn(),
+  openNotificationHistory: vi.fn(),
+}));
+
 vi.mock("../i18n/LanguageContext", () => ({
-  useLanguage: () => ({ t: (key: string) => key }),
+  useLanguage: () => ({ t: (key: string) => key, language: "tr", setLanguage }),
+}));
+
+vi.mock("../lib/notifications/notificationHistoryOpen", () => ({
+  openNotificationHistory,
 }));
 
 vi.mock("../lib/authStorage", () => ({
@@ -44,5 +53,41 @@ describe("account menu", () => {
     expect(
       screen.getByRole("button", { name: /nav\.account/ }),
     ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("switches language in place, naming both in their own words", () => {
+    render(
+      <MemoryRouter>
+        <AccountMenu />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /nav\.account/ }));
+    const turkish = screen.getByRole("menuitemradio", { name: "Türkçe" });
+    const english = screen.getByRole("menuitemradio", { name: "English" });
+    expect(turkish).toHaveAttribute("aria-checked", "true");
+    expect(english).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(english);
+
+    expect(setLanguage).toHaveBeenCalledWith("en");
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+
+  it("closes and opens the notification history, handing focus back to it", () => {
+    render(
+      <MemoryRouter>
+        <AccountMenu />
+      </MemoryRouter>,
+    );
+
+    const trigger = screen.getByRole("button", { name: /nav\.account/ });
+    fireEvent.click(trigger);
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "nav.notifications" }),
+    );
+
+    expect(openNotificationHistory).toHaveBeenCalledWith(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 });

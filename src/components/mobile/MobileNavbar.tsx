@@ -1,11 +1,11 @@
-import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
+import { NotificationHistoryPanel } from "../notifications/NotificationHistoryPanel";
 import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { AccountMenu } from "../AccountMenu";
 import { AppUpdateButton } from "../AppUpdateButton";
-import { LanguageSwitch } from "../LanguageSwitch";
+import { NavbarSurface } from "../NavbarSurface";
 import { NavbarWordmark } from "../NavbarWordmark";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { Tooltip } from "../ui/Tooltip";
@@ -33,23 +33,21 @@ export function MobileNavbar() {
     location.pathname === "/home" ||
     /^\/(?:movies|shows)\/[^/]+(?:\/season\/[^/]+)?$/.test(location.pathname);
   const showHeaderSurface = hasScrolled || !headerOverArtwork;
-  const headerSurfaceClass = showHeaderSurface
-    ? "bg-black/75 backdrop-blur-2xl"
-    : "bg-transparent";
 
   return (
     <>
       <header
         // On a tablet the clear bar sits over the floating backdrop, which
         // starts 8px down: its contents drop to the bar's foot to clear it.
-        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between  px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[background-color,border-color,backdrop-filter,padding] duration-300 ${headerSurfaceClass} ${
+        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between  px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[padding] duration-300 ${
           showHeaderSurface ? "" : "md:pb-0"
         }`}
       >
+        <NavbarSurface forced={!headerOverArtwork} variant="mobile" />
         <Link
           to="/home"
           aria-label={t("nav.brandHome")}
-          className="flex h-10 min-w-0 flex-1 items-center pr-2"
+          className="relative z-[1] flex h-10 min-w-0 flex-1 items-center pr-2"
         >
           <NavbarWordmark className="h-9" overArtwork={!showHeaderSurface} />
         </Link>
@@ -58,7 +56,7 @@ export function MobileNavbar() {
             bright picture never swallows them. Each glyph takes it, not the
             group: a filter there would anchor the menus' fixed panels. */}
         <div
-          className={`flex shrink-0 items-center gap-1 ${
+          className={`relative z-[1] flex shrink-0 items-center gap-1 ${
             showHeaderSurface ? "" : "[&_svg]:[filter:var(--filter-navbar-ink)]"
           }`}
         >
@@ -73,10 +71,9 @@ export function MobileNavbar() {
               <Search size={18} />
             </button>
           </Tooltip>
-          <LanguageSwitch />
-          <NotificationHistoryButton />
           <AccountMenu variant="mobile" />
         </div>
+        <NotificationHistoryPanel />
       </header>
 
       <MobileTabBar />

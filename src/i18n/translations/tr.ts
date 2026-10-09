@@ -320,6 +320,8 @@ export const tr = {
   "nav.books": "Kitaplar",
   "nav.account": "Hesap",
   "nav.logout": "Çıkış",
+  "nav.language": "Dil",
+  "nav.notifications": "Bildirimler",
   "nav.language.switchToTurkish": "Türkçeye geç",
   "nav.language.switchToEnglish": "İngilizceye geç",
   "nav.language.ariaToTurkish": "Dili Türkçeye değiştir",

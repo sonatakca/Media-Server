@@ -1,4 +1,4 @@
-import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
+import { NotificationHistoryPanel } from "../notifications/NotificationHistoryPanel";
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
@@ -7,7 +7,7 @@ import { AccountMenu } from "../AccountMenu";
 import { AppUpdateButton } from "../AppUpdateButton";
 import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
-import { LanguageSwitch } from "../LanguageSwitch";
+import { NavbarSurface } from "../NavbarSurface";
 import { NavbarWordmark } from "../NavbarWordmark";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { SlidingIndicator } from "../ui/SlidingIndicator";
@@ -79,19 +79,14 @@ export function DesktopNavbar() {
   };
 
   return (
-    <header
-      className={`fixed inset-x-0 top-0 z-40 select-none pt-[env(safe-area-inset-top)] transition-[background-color,border-color,box-shadow,backdrop-filter] ease-out [-webkit-tap-highlight-color:transparent] ${
-        hasScrolled
-          ? "duration-700 border-b border-white/[0.08] bg-black/75 shadow-navbar-glass backdrop-blur-2xl"
-          : "duration-500 border-b border-transparent bg-transparent shadow-none backdrop-blur-0"
-      }`}
-    >
+    <header className="fixed inset-x-0 top-0 z-40 select-none pt-[env(safe-area-inset-top)] [-webkit-tap-highlight-color:transparent]">
+      <NavbarSurface variant="desktop" />
       {/* Clear, the bar sits over a floating backdrop that starts 8px down,
           so its contents drop by as much to stand as far inside its top edge
           as inside its side. `top`, not a transform: a transform would
           anchor the menus' fixed panels to the bar. */}
       <nav
-        className={`relative mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 transition-[top] ease-out sm:h-20 sm:gap-8 sm:px-6 lg:px-8 ${
+        className={`relative z-[1] mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 transition-[top] ease-out sm:h-20 sm:gap-8 sm:px-6 lg:px-8 ${
           hasScrolled ? "top-0 duration-700" : "top-2 duration-500"
         }`}
       >
@@ -168,14 +163,11 @@ export function DesktopNavbar() {
             </button>
           </Tooltip>
 
-          <LanguageSwitch />
-
-          <NotificationHistoryButton />
-
           {/* The name doubles as the way into /dev: five quick presses. */}
           <AccountMenu onTriggerClick={handleBrandEasterEggClick} />
         </div>
       </nav>
+      <NotificationHistoryPanel />
     </header>
   );
 }

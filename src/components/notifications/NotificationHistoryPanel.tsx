@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { Bell, X } from "lucide-react";
+import { X } from "lucide-react";
 import {
   getNotificationHistory,
   subscribeToNotifications,
 } from "../../lib/notifications/notificationStore";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { NOTIFICATION_HISTORY_OPEN_EVENT } from "../../lib/notifications/notificationHistoryOpen";
 import { TaskDetails } from "./TaskDetails";
 
-export function NotificationHistoryButton() {
+/** Mounted once by the navbar; draws the history when asked for. */
+export function NotificationHistoryPanel() {
   const { t, language } = useLanguage();
   const [open, setOpen] = useState(false);
-  const button = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const close = useRef<HTMLButtonElement>(null);
   const history = useSyncExternalStore(
     subscribeToNotifications,
@@ -19,12 +21,21 @@ export function NotificationHistoryButton() {
     getNotificationHistory,
   );
   useEffect(() => {
+    const handleOpen = (event: Event) => {
+      returnFocus.current = (event as CustomEvent<HTMLElement | null>).detail;
+      setOpen(true);
+    };
+    window.addEventListener(NOTIFICATION_HISTORY_OPEN_EVENT, handleOpen);
+    return () =>
+      window.removeEventListener(NOTIFICATION_HISTORY_OPEN_EVENT, handleOpen);
+  }, []);
+  useEffect(() => {
     if (!open) return;
     close.current?.focus();
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
-        button.current?.focus();
+        returnFocus.current?.focus();
       }
     };
     window.addEventListener("keydown", escape);
@@ -33,17 +44,6 @@ export function NotificationHistoryButton() {
   const date = (time: number) => new Date(time).toLocaleString(language);
   return (
     <>
-      <button
-        ref={button}
-        type="button"
-        aria-label={t("notifications.history")}
-        title={t("notifications.history")}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/75 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-      >
-        <Bell size={18} className="navbar-ink-shadow" />
-      </button>
       {open
         ? createPortal(
             <section
@@ -61,7 +61,7 @@ export function NotificationHistoryButton() {
                   className="flex h-11 w-11 items-center justify-center rounded-full text-white hover:bg-white/10"
                   onClick={() => {
                     setOpen(false);
-                    button.current?.focus();
+                    returnFocus.current?.focus();
                   }}
                 >
                   <X size={20} />

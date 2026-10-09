@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
+  Bell,
   LogOut,
   Palette,
   ShieldCheck,
@@ -14,9 +15,20 @@ import { formatBuildLabel } from "../lib/appVersion/buildInfo";
 import { clearAuthSession, getCachedSession } from "../lib/authStorage";
 import { isOfflineSupported } from "../lib/offline/offlineLibrary";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "./RouteColorTransition";
+import { openNotificationHistory } from "../lib/notifications/notificationHistoryOpen";
+import type { Language } from "../i18n/translations";
 
 const ITEM =
   "flex w-full items-center gap-3 rounded-full px-3 py-2 text-left text-sm font-bold text-white/72 transition-[background-color,color] duration-150 ease-out hover:bg-white/[0.09] hover:text-white focus-visible:bg-white/[0.09] focus-visible:text-white focus-visible:outline-none";
+
+const MENU_ITEMS = '[role="menuitem"], [role="menuitemradio"]';
+
+// Each language in its own name: whoever is looking for the other one may
+// not read the one the interface is in.
+const LANGUAGES: { value: Language; flag: string; name: string }[] = [
+  { value: "tr", flag: "fi-tr", name: "Türkçe" },
+  { value: "en", flag: "fi-gb", name: "English" },
+];
 
 interface AccountMenuProps {
   variant?: "desktop" | "mobile";
@@ -25,8 +37,9 @@ interface AccountMenuProps {
 }
 
 /**
- * Theme, administration and logout behind the account name. They were three
- * unlabelled icons in the bar, and logout was one stray tap from any page.
+ * Everything about the person rather than the library: notifications,
+ * downloads, administration, theme, language and logout. They were loose
+ * icons in the bar, and logout was one stray tap from any page.
  */
 export function AccountMenu({
   variant = "desktop",
@@ -35,7 +48,7 @@ export function AccountMenu({
   const navigate = useNavigate();
   const location = useLocation();
   const session = getCachedSession();
-  const { t, language } = useLanguage();
+  const { t, language, setLanguage } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -58,7 +71,7 @@ export function AccountMenu({
     }
 
     menuRef.current
-      ?.querySelector<HTMLElement>('[role="menuitem"]')
+      ?.querySelector<HTMLElement>(MENU_ITEMS)
       ?.focus({ preventScroll: true });
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -80,8 +93,7 @@ export function AccountMenu({
       }
 
       const items = Array.from(
-        menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ??
-          [],
+        menuRef.current?.querySelectorAll<HTMLElement>(MENU_ITEMS) ?? [],
       );
       const index = items.indexOf(document.activeElement as HTMLElement);
       const step = event.key === "ArrowDown" ? 1 : -1;
@@ -106,6 +118,11 @@ export function AccountMenu({
   const handleThemeChange = () => {
     setIsOpen(false);
     window.dispatchEvent(new Event(ROUTE_COLOR_TRANSITION_FORCE_EVENT));
+  };
+
+  const handleNotifications = () => {
+    setIsOpen(false);
+    openNotificationHistory(triggerRef.current);
   };
 
   const handleLogout = () => {
@@ -168,7 +185,7 @@ export function AccountMenu({
             style={{ transformOrigin: "100% 0%" }}
             role="menu"
             aria-label={t("nav.account")}
-            className="absolute right-0 top-full z-[70] mt-2 w-max min-w-[12rem] rounded-2xl border border-white/10 bg-[#171719]/95 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-1px_0_rgba(0,0,0,0.28),0_10px_35px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
+            className="absolute right-0 top-full z-[70] mt-2 w-max min-w-[14.5rem] rounded-2xl border border-white/10 bg-[#171719]/95 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-1px_0_rgba(0,0,0,0.28),0_10px_35px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
           >
             <p className="truncate px-3 pb-2 pt-1.5 text-xs font-semibold text-white/50">
               {session.username}
@@ -176,11 +193,11 @@ export function AccountMenu({
             <button
               type="button"
               role="menuitem"
-              onClick={handleThemeChange}
+              onClick={handleNotifications}
               className={ITEM}
             >
-              <Palette size={16} className="shrink-0" />
-              {t("nav.changeTheme")}
+              <Bell size={16} className="shrink-0" />
+              {t("nav.notifications")}
             </button>
             {isOfflineSupported() ? (
               <Link to="/downloads" role="menuitem" className={ITEM}>
@@ -194,6 +211,61 @@ export function AccountMenu({
                 {t("admin.entry")}
               </Link>
             ) : null}
+            <div aria-hidden="true" className="mx-3 my-1 h-px bg-white/10" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleThemeChange}
+              className={ITEM}
+            >
+              <Palette size={16} className="shrink-0" />
+              {t("nav.changeTheme")}
+            </button>
+            {/* Both languages in view, so the choice reads as where you are
+                and where you could be, not a flag that means "the other one". */}
+            <div
+              role="group"
+              aria-label={t("nav.language")}
+              className="relative mx-1 mb-1 mt-0.5 grid grid-cols-2 rounded-full bg-white/[0.05] p-1"
+            >
+              <span
+                aria-hidden="true"
+                className="absolute bottom-1 left-1 top-1 w-[calc(50%-0.25rem)] rounded-full bg-white/[0.12] shadow-[0_1px_3px_rgba(0,0,0,0.4)] transition-transform duration-300 ease-[cubic-bezier(0.37,0,0.63,1)] motion-reduce:transition-none"
+                style={{
+                  transform:
+                    language === LANGUAGES[0].value
+                      ? "translateX(0)"
+                      : "translateX(100%)",
+                }}
+              />
+              {LANGUAGES.map((option) => {
+                const isCurrent = option.value === language;
+
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={isCurrent}
+                    lang={option.value}
+                    onClick={() => setLanguage(option.value)}
+                    className={`relative flex items-center justify-center gap-2 rounded-full px-3 py-1.5 text-[0.8125rem] font-bold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                      isCurrent
+                        ? "text-white"
+                        : "text-white/55 hover:text-white/85"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`fi ${option.flag} block h-3 w-4 shrink-0 rounded-[2px] transition-opacity duration-200 ${
+                        isCurrent ? "opacity-100" : "opacity-60"
+                      }`}
+                    />
+                    {option.name}
+                  </button>
+                );
+              })}
+            </div>
             <div aria-hidden="true" className="mx-3 my-1 h-px bg-white/10" />
             <button
               type="button"
