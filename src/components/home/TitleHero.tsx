@@ -28,6 +28,7 @@ import {
   HERO_MOTION,
   HERO_TRAILER_DELAY_MS,
   TITLE_SCALE,
+  heroDock,
   heroLayout,
   queueSlots,
   stagePlacement,
@@ -96,6 +97,7 @@ export function TitleHero({
     return () => observer.disconnect();
   }, []);
   const layout = stage ? heroLayout(stage, { withQueue: false }) : null;
+  const dock = stage ? heroDock(stage, { withQueue: false }) : null;
   const titleScale = layout?.titleScale ?? TITLE_SCALE;
   const slotScale =
     stage && layout ? queueSlots(stage)[0]!.width / stage.width : 0.12;
@@ -278,15 +280,24 @@ export function TitleHero({
           onShowDetails={onShowDetails}
           reduceMotion={reduceMotion}
           smartContinueItems={smartContinueItems}
+          withQueue={false}
         />
       ) : null}
 
-      {/* With nothing queued, the pill holds only the trailer's controls,
-          level with the actions at the right. */}
-      {layout && trailerUrl ? (
+      {/* With nothing queued, the pill holds only the trailer's controls:
+          over the dock where it stands at the right, else level with the
+          actions there. */}
+      {layout && stage && dock && trailerUrl ? (
         <motion.div
           className="absolute z-[6] flex items-center gap-1 rounded-full border border-white/[0.14] bg-black/60 p-1 text-white shadow-[0_18px_60px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl"
-          style={{ right: layout.copy.left, bottom: layout.copy.bottom + 1 }}
+          style={
+            layout.form === "wide"
+              ? {
+                  right: stage.width - dock.left - dock.width,
+                  bottom: dock.bottom + dock.height + 12,
+                }
+              : { right: layout.copy.left, bottom: layout.copy.bottom + 1 }
+          }
           initial={{ opacity: 0 }}
           animate={{ opacity: isArtworkReady ? 1 : 0 }}
           transition={{ duration: reduceMotion ? 0 : 0.5, ease: "easeOut" }}

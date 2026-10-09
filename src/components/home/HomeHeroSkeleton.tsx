@@ -77,7 +77,7 @@ export function HomeHeroSkeletonPieces({
   const head = slots[0]!;
   const last = slots[slots.length - 1]!;
   const copyTop = stage.height - layout.copy.bottom - layout.copy.height;
-  const dock = heroDock(stage);
+  const dock = heroDock(stage, { withQueue });
   const rest = layout.titleScale.rest;
   const logoWidth = layout.title.width * rest;
   const logoHeight = layout.title.height * rest * LOGO_HEIGHT_SHARE;
@@ -120,7 +120,7 @@ export function HomeHeroSkeletonPieces({
       <div
         className={`absolute hero-dock ${dock.compact ? "hero-dock-compact" : ""}`}
         style={{
-          left: (stage.width - dock.width) / 2,
+          left: dock.left,
           bottom: dock.bottom,
           width: dock.width,
         }}

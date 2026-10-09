@@ -339,6 +339,22 @@ describe("a tall stage", () => {
   );
 });
 
+describe("a title page's dock", () => {
+  it.each(DESKTOP_SIZES)(
+    "stands where the previews end, clear of the copy ($width)",
+    (stage) => {
+      const slots = queueSlots(stage);
+      const last = slots[slots.length - 1]!;
+      const dock = heroDock(stage, { withQueue: false });
+      const layout = heroLayout(stage, { withQueue: false });
+      expect(dock.left + dock.width).toBe(last.x + last.width);
+      expect(dock.left + dock.width).toBe(stage.width - layout.copy.left);
+      expect(layout.copy.left + layout.copy.width).toBeLessThan(dock.left);
+      expect(heroDock(stage).left).toBe((stage.width - dock.width) / 2);
+    },
+  );
+});
+
 describe("the approved tablet rhythm", () => {
   it("keeps its single preview exactly level with the centre dock", () => {
     const stage = { width: 1048, height: (1048 * 9) / 16 };

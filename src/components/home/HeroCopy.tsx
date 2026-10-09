@@ -70,9 +70,12 @@ export function HeroCopyBlock({
   reduceMotion,
   smartContinueItems,
   titleSize,
+  withQueue = true,
 }: {
   stage: StageSize;
   layout: HeroLayout;
+  /** False on a title's own page: no queue, so the dock stands at the right. */
+  withQueue?: boolean;
   /** The title the copy describes; null while it is between titles. */
   item: MediaItem | null;
   /**
@@ -92,7 +95,7 @@ export function HeroCopyBlock({
   smartContinueItems: MediaItem[];
 }) {
   const overviewId = useId();
-  const dock = heroDock(stage);
+  const dock = heroDock(stage, { withQueue });
   const [copyWidth, setCopyWidth] = useState<number | null>(null);
   const title = titleSize ?? layout.title;
   const titleScale = isOverviewOpen
@@ -172,8 +175,8 @@ export function HeroCopyBlock({
       </div>
       {layout.form === "wide" ? (
         <div
-          className="absolute z-[6] -translate-x-1/2"
-          style={{ left: "50%", bottom: dock.bottom, width: dock.width }}
+          className="absolute z-[6]"
+          style={{ left: dock.left, bottom: dock.bottom, width: dock.width }}
         >
           <AnimatePresence mode="wait">
             {item ? (

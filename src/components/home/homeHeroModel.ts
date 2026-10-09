@@ -36,12 +36,28 @@ export function queueCount(stage: StageSize): number {
   return heroForm(stage) === "tall" ? 3 : stage.width >= 1200 ? 2 : 1;
 }
 
-/** The dock and tablet preview share their vertical rhythm. */
-export function heroDock(stage: StageSize) {
+/** A wide stage's side margin: the copy's on the left, the queue's on the right. */
+function wideInset(stage: StageSize): number {
+  return stage.width < 1200 ? 40 : 56;
+}
+
+/**
+ * The dock and tablet preview share their vertical rhythm. With a queue the
+ * dock stands centred between the copy and the queue; a title's own page has
+ * no queue, so its dock takes the queue's place on the right.
+ */
+export function heroDock(
+  stage: StageSize,
+  { withQueue = true }: { withQueue?: boolean } = {},
+) {
   const compact = heroForm(stage) === "tall" || stage.width < 1200;
   const width = Math.min(compact ? 264 : 300, stage.width - 32);
+  const isAside = !withQueue && heroForm(stage) === "wide";
   return {
     width,
+    left: isAside
+      ? stage.width - wideInset(stage) - width
+      : (stage.width - width) / 2,
     height: compact ? 102 : 113,
     bottom:
       heroForm(stage) === "tall"
@@ -219,7 +235,7 @@ export function queueSlots(
     : clamp(stage.width * (192 / 1408), 164, 256);
   const height = compact ? dock.height : (width * 9) / 16;
   const gap = 12;
-  const right = compact ? 40 : 56;
+  const right = wideInset(stage);
   const bottom = compact ? dock.bottom : 24;
   const y = stage.height - bottom - height;
   return Array.from({ length: count }, (_, index) => ({
@@ -479,19 +495,15 @@ export function heroLayout(
   if (heroForm(stage) === "tall") return tallLayout(stage, withQueue);
   const compact = stage.width < 1200;
   const bottom = compact ? 20 : 30;
-  const left = compact ? 40 : 56;
+  const left = wideInset(stage);
   const overviewFontPx = compact ? 14 : 15.5;
   const overviewHeight = Math.ceil(
     overviewFontPx * COPY_ROWS.overviewLineHeight * COPY_ROWS.overviewLines,
   );
-  const dock = heroDock(stage);
+  const dock = heroDock(stage, { withQueue });
   const width = Math.max(
     160,
-    Math.min(
-      stage.width * 0.34,
-      600,
-      (stage.width - dock.width) / 2 - left - 20,
-    ),
+    Math.min(stage.width * 0.34, 600, dock.left - left - 20),
   );
   return {
     form: "wide",
