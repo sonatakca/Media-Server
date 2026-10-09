@@ -18,6 +18,11 @@ import { getStageImageCandidates } from "../hero/heroModel";
 import { useLogoShadow } from "./logoShadowStyle";
 import { useBakedLogoShadows } from "./useBakedLogoShadows";
 import {
+  measureWords,
+  useReportedSize,
+  type DrawnSize,
+} from "./useReportedSize";
+import {
   QUEUE_TITLE_BOX,
   TITLE_SCALE,
   heroForm,
@@ -113,6 +118,22 @@ interface HeroCompositionProps {
    * artwork and logo load but wait to fade in until they can be seen.
    */
   isRevealed?: boolean;
+  /**
+   * The title as drawn at full size, logo or lettering, before the scale it
+   * rests or travels at: the copy's hover target reaches exactly that high.
+   */
+  onTitleSize?: (size: DrawnSize) => void;
+}
+
+/** A logo held to its box by `object-contain`, measured as it is drawn. */
+function drawnLogoSize(image: HTMLImageElement): DrawnSize {
+  const box = { width: image.offsetWidth, height: image.offsetHeight };
+  if (!image.naturalWidth || !image.naturalHeight) return box;
+  const aspect = image.naturalWidth / image.naturalHeight;
+  return {
+    width: Math.min(box.width, box.height * aspect),
+    height: Math.min(box.height, box.width / aspect),
+  };
 }
 
 export function HeroComposition({
@@ -133,12 +154,18 @@ export function HeroComposition({
   onTrailerEnded,
   onArtworkReady,
   isRevealed = true,
+  onTitleSize,
 }: HeroCompositionProps) {
   const { language } = useLanguage();
   const [failed, setFailed] = useState<string[]>([]);
   const [isArtworkLoaded, setIsArtworkLoaded] = useState(false);
   const [isLogoLoaded, setIsLogoLoaded] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const logoRef = useReportedSize<HTMLImageElement>(onTitleSize, drawnLogoSize);
+  const letteringRef = useReportedSize<HTMLHeadingElement>(
+    onTitleSize,
+    measureWords,
+  );
 
   const form = heroForm(stage);
   const artwork = getStageImageCandidates(item, form, stage.width).find(
@@ -385,6 +412,7 @@ export function HeroComposition({
                   />
                 ) : null}
                 <img
+                  ref={logoRef}
                   src={logoUrl}
                   alt={isStage ? title : ""}
                   draggable={false}
@@ -397,6 +425,7 @@ export function HeroComposition({
           </div>
         ) : (
           <motion.h2
+            ref={letteringRef}
             className="text-cinematic-title font-black uppercase leading-[0.9] text-white"
             style={{
               fontSize:

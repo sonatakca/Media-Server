@@ -30,6 +30,11 @@ import { HeroActions, heroPlayState } from "./HeroActions";
 import { sampleUrl } from "./logoShadowStyle";
 import { copyShadowFor } from "./heroCopyShadow";
 import {
+  measureWords,
+  useReportedSize,
+  type DrawnSize,
+} from "./useReportedSize";
+import {
   COPY_ROWS,
   HERO_MOTION,
   heroDock,
@@ -43,10 +48,14 @@ import {
  * title's own page, so both read and behave alike.
  */
 
+/** Room the hover target keeps around the copy and the title it covers. */
+const HOVER_ROOM_PX = { side: 16, top: 12 };
+
 /**
- * The title and its copy, as one hover target. The block reaches up over the
- * resting title, so resting the pointer on it opens the overview; once open
- * it also covers the risen, grown title.
+ * The title and its copy, as one hover target, no wider than the overview's
+ * lines or the title as drawn and no taller than the drawn title. It reaches
+ * up over the resting title, so resting the pointer on it opens the
+ * overview; once open it also covers the risen, grown title.
  */
 export function HeroCopyBlock({
   stage,
@@ -60,11 +69,17 @@ export function HeroCopyBlock({
   onShowDetails,
   reduceMotion,
   smartContinueItems,
+  titleSize,
 }: {
   stage: StageSize;
   layout: HeroLayout;
   /** The title the copy describes; null while it is between titles. */
   item: MediaItem | null;
+  /**
+   * The title as drawn at full size, once measured; until then the target
+   * covers the title's whole box.
+   */
+  titleSize?: DrawnSize | null;
   overview: MotionValue<number>;
   isOverviewOpen: boolean;
   /** The pointer has rested on the title (true), or left it (false). */
@@ -78,23 +93,29 @@ export function HeroCopyBlock({
 }) {
   const overviewId = useId();
   const dock = heroDock(stage);
+  const [copyWidth, setCopyWidth] = useState<number | null>(null);
+  const title = titleSize ?? layout.title;
+  const titleScale = isOverviewOpen
+    ? layout.titleScale.open
+    : layout.titleScale.rest;
   return (
     <>
       <div
         className="absolute z-[6]"
         style={{
-          left: layout.copy.left - 16,
+          left: layout.copy.left - HOVER_ROOM_PX.side,
           bottom: layout.copy.bottom,
-          width: Math.max(layout.copy.width, layout.title.width) + 32,
+          width:
+            Math.max(copyWidth ?? layout.copy.width, title.width * titleScale) +
+            HOVER_ROOM_PX.side * 2,
           // The resting title and its copy; while open, the risen, full-size
           // title too, so the pointer can move onto it without closing it.
           height:
             layout.title.bottom -
             layout.copy.bottom +
-            12 +
-            (isOverviewOpen
-              ? layout.title.height + layout.overviewLift
-              : layout.title.height * layout.titleScale.rest),
+            HOVER_ROOM_PX.top +
+            title.height * titleScale +
+            (isOverviewOpen ? layout.overviewLift : 0),
           pointerEvents: item ? "auto" : "none",
         }}
         onMouseEnter={() => onHoverIntent(true)}
@@ -113,7 +134,7 @@ export function HeroCopyBlock({
         <div
           className="absolute"
           style={{
-            left: 16,
+            left: HOVER_ROOM_PX.side,
             bottom: 0,
             width: layout.copy.width,
             height: layout.copy.height,
@@ -141,6 +162,7 @@ export function HeroCopyBlock({
                 onShowDetails={onShowDetails}
                 reduceMotion={reduceMotion}
                 smartContinueItems={smartContinueItems}
+                onLinesWidth={setCopyWidth}
               />
             ) : null}
           </AnimatePresence>
@@ -292,10 +314,13 @@ function HeroCopy({
   onShowDetails,
   reduceMotion,
   smartContinueItems,
+  onLinesWidth,
 }: {
   item: MediaItem;
   stage: StageSize;
   layout: HeroLayout;
+  /** How wide the copy's lines are drawn: the overview's, or the facts'. */
+  onLinesWidth: (width: number) => void;
   /** Where the facts line lies over the artwork, as shares of it. */
   factsRegion: SampleRegion;
   overviewId: string;
@@ -310,12 +335,23 @@ function HeroCopy({
 }) {
   const { language, t } = useLanguage();
   const shade = useCopyShade(item, stage, layout, factsRegion);
+  const metadata = getItemDisplayMetadata(item, language);
+  const reportWidth = (size: DrawnSize) => onLinesWidth(size.width);
+  // The overview wraps within its own measure, so its box is its lines'
+  // width; the facts line is a block as wide as the copy, so its words are
+  // measured.
+  const overviewRef = useReportedSize<HTMLParagraphElement>(
+    metadata.overview ? reportWidth : undefined,
+  );
+  const factsRef = useReportedSize<HTMLParagraphElement>(
+    metadata.overview ? undefined : reportWidth,
+    measureWords,
+  );
   const labels = {
     season: t("media.seasonNumber"),
     hourShort: t("format.hourShort"),
     minuteShort: t("format.minuteShort"),
   };
-  const metadata = getItemDisplayMetadata(item, language);
   const runtime = formatRuntime(item.RunTimeTicks, labels);
   const facts = [
     item.ProductionYear,
@@ -373,6 +409,7 @@ function HeroCopy({
         style={{ height: COPY_ROWS.factsPx, y: factsY }}
       >
         <motion.p
+          ref={factsRef}
           variants={line(0)}
           className="truncate text-[0.8125rem] font-bold leading-5 tracking-[0.04em]"
           style={{ ...copyTextStyle(shade, 0.72), maxWidth: layout.factsWidth }}
@@ -404,6 +441,7 @@ function HeroCopy({
           }}
         >
           <motion.p
+            ref={overviewRef}
             className="line-clamp-3 max-w-[46ch] font-semibold"
             style={{
               ...copyTextStyle(shade, 0.8),

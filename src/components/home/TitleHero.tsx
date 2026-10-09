@@ -21,6 +21,7 @@ import {
 } from "../hero/heroModel";
 import { HeroComposition, createCompositionMotion } from "./HeroComposition";
 import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
+import type { DrawnSize } from "./useReportedSize";
 import {
   HERO_HEIGHT_CLASS,
   HERO_MOTION,
@@ -100,6 +101,10 @@ export function TitleHero({
 
   // --------------------------------------------------------- the overview
   const [isOverviewHovered, setIsOverviewHovered] = useState(false);
+  /** The title as drawn, for the copy's hover target. */
+  const [titleSize, setTitleSize] = useState<
+    (DrawnSize & { id: string }) | null
+  >(null);
   const [isOverviewPinned, setIsOverviewPinned] = useState(false);
   const [isOverviewFocused, setIsOverviewFocused] = useState(false);
   const isOverviewOpen =
@@ -249,6 +254,7 @@ export function TitleHero({
           isTrailerMuted={isTrailerMuted}
           onTrailerEnded={endTrailer}
           onArtworkReady={() => setIsArtworkLoaded(true)}
+          onTitleSize={(size) => setTitleSize({ id: item.Id, ...size })}
           isRevealed={isRevealed}
         />
       ) : null}
@@ -258,6 +264,7 @@ export function TitleHero({
           stage={stage}
           layout={layout}
           item={copyItem}
+          titleSize={titleSize?.id === item.Id ? titleSize : null}
           overview={overview}
           isOverviewOpen={isOverviewOpen}
           onHoverIntent={setIsOverviewHovered}

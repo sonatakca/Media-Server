@@ -34,6 +34,7 @@ import {
 import { getHeroPreviewUrl } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
+import type { DrawnSize } from "./useReportedSize";
 import { useSmartContinueItems } from "./useSmartContinueItems";
 import {
   getHeroImageCandidates,
@@ -217,6 +218,10 @@ export function HomeHero({
   // The overview opens only when asked for: a pointer resting on the title,
   // focus inside its copy, or its button. It closes whenever the title leaves.
   const [isOverviewHovered, setIsOverviewHovered] = useState(false);
+  /** The stage title as drawn, for the copy's hover target. */
+  const [stageTitle, setStageTitle] = useState<
+    (DrawnSize & { id: string }) | null
+  >(null);
   const [isOverviewPinned, setIsOverviewPinned] = useState(false);
   const [isOverviewFocused, setIsOverviewFocused] = useState(false);
   const isOverviewOpen =
@@ -1006,6 +1011,11 @@ export function HomeHero({
                 isTrailerMuted={isTrailerMuted}
                 onTrailerEnded={endTrailer}
                 onArtworkReady={() => handleArtworkReady(layer.id)}
+                onTitleSize={
+                  isStage
+                    ? (size) => setStageTitle({ id: layer.id, ...size })
+                    : undefined
+                }
               />
             );
           })
@@ -1017,6 +1027,9 @@ export function HomeHero({
           stage={stage}
           layout={layout}
           item={copyItem}
+          titleSize={
+            stageTitle && stageTitle.id === copyItem?.Id ? stageTitle : null
+          }
           overview={overview}
           isOverviewOpen={isOverviewOpen}
           onHoverIntent={(open) => {
