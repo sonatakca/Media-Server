@@ -582,7 +582,7 @@ export function DesktopLibraryPage({
           <div className="layout-no-offset flex min-w-0 flex-col">
             <BackButton className="fixed left-5 top-24 z-[80] lg:left-8" />
 
-            <div className="full-bleed relative min-h-[100svh]">
+            <div className="full-bleed relative flow-root">
               <TitleHero
                 key={data.library.Id}
                 item={data.library}

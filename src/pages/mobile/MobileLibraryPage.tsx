@@ -558,6 +558,7 @@ export function MobileLibraryPage({
                   item={data.library}
                   isRevealed={isInitialDetailsReady}
                   onWatchedSlot={setWatchedSlot}
+                  onShowDetails={showTitleDetails}
                 />
               ) : (
                 <TitleHero

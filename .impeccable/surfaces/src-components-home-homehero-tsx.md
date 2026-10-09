@@ -2,7 +2,14 @@
 version: 1
 slug: "src-components-home-homehero-tsx"
 primary_target: "src/components/home/HomeHero.tsx"
-related_targets: ["src/pages/desktop/DesktopHomePage.tsx", "src/pages/mobile/MobileHomePage.tsx", "src/components/home/TitleHero.tsx", "src/pages/mobile/MobileLibraryPage.tsx", "src/components/home/HomeHeroSkeleton.tsx"]
+related_targets:
+  [
+    "src/pages/desktop/DesktopHomePage.tsx",
+    "src/pages/mobile/MobileHomePage.tsx",
+    "src/components/home/TitleHero.tsx",
+    "src/pages/mobile/MobileLibraryPage.tsx",
+    "src/components/home/HomeHeroSkeleton.tsx",
+  ]
 ---
 
 # Home hero (every device)
@@ -24,3 +31,19 @@ TALL STAGE (tablet upright, any portrait window wider than a phone): the stage e
 FORM: code-led section in an established world; no seed roll (section scope).
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+
+## Approved floating hero (October 9, 2026)
+
+The reviewed centre-dock prototype is the authority for this revision. Frame the
+clean artwork with 16px margins and 16px corners. Desktop keeps two larger
+16:9 previews; landscape tablet keeps one preview at the dock's 102px height
+and uses the backdrop's 16:9 band. Play occupies the dock's top floor and
+labelled Details, My List and Overview occupy its lower floor. Preserve resume,
+start over, watched and offline actions where applicable.
+
+Logo, facts and overview share a 240ms sine-in-out clock, with immediate pointer
+leave collapse. On a phone title page, place the logo below the unshaded artwork
+with 16px top padding. Mirror the backdrop across its bottom edge, blur 30px at
+60% opacity behind the complete copy, and keep 24px below the description. The
+card has 16px side margins and rounded top and bottom corners. The back control
+sits evenly inside its top-left corner, a 38px visible circle in a 44px target.

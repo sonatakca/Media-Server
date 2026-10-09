@@ -3,7 +3,8 @@ import {
   COPY_ROWS,
   HERO_MOTION,
   heroForm,
-  TITLE_SCALE,
+  heroDock,
+  queueCount,
   queueTitleTransform,
   stageness,
   arrivalPlacement,
@@ -32,8 +33,8 @@ const DESKTOP_SIZES = [
 
 describe("the queue", () => {
   it("holds the titles after the one on stage, wrapping, never the stage itself", () => {
-    expect(queueIndices(0, 10)).toEqual([1, 2, 3]);
-    expect(queueIndices(8, 10)).toEqual([9, 0, 1]);
+    expect(queueIndices(0, 10)).toEqual([1, 2]);
+    expect(queueIndices(8, 10)).toEqual([9, 0]);
     expect(queueIndices(1, 3)).toEqual([2, 0]);
     expect(queueIndices(0, 1)).toEqual([]);
   });
@@ -46,13 +47,14 @@ describe("the queue", () => {
 
 describe("queue geometry", () => {
   it.each(DESKTOP_SIZES)(
-    "keeps each slot at the stage's own shape at $width×$height",
+    "uses two 16:9 desktop previews or one dock-height tablet preview ($width)",
     (stage) => {
-      for (const slot of queueSlots(stage)) {
-        expect(slot.width / slot.height).toBeCloseTo(
-          stage.width / stage.height,
-          5,
-        );
+      const slots = queueSlots(stage);
+      expect(slots).toHaveLength(stage.width >= 1200 ? 2 : 1);
+      for (const slot of slots) {
+        if (stage.width >= 1200)
+          expect(slot.width / slot.height).toBeCloseTo(16 / 9, 5);
+        else expect(slot.height).toBe(heroDock(stage).height);
       }
     },
   );
@@ -125,7 +127,7 @@ describe("the queue sliding as a row", () => {
     "never lets one miniature pass another, whichever slot was chosen ($width)",
     (stage) => {
       const slots = queueSlots(stage);
-      for (const chosen of [0, 1, 2]) {
+      for (let chosen = 0; chosen < slots.length; chosen += 1) {
         const staying = slots
           .slice(chosen + 1)
           .map((slot) => slotPlacement(stage, slot));
@@ -159,12 +161,17 @@ describe("the queue sliding as a row", () => {
 
 describe("layout", () => {
   it.each(DESKTOP_SIZES)(
-    "puts the copy bottom-left, level with the queue, and the title right above it ($width)",
+    "keeps copy, centre dock and previews apart with the title above its facts ($width)",
     (stage) => {
       const layout = heroLayout(stage);
       const slots = queueSlots(stage);
       const queueBottom = stage.height - (slots[0]!.y + slots[0]!.height);
-      expect(layout.copy.bottom).toBeCloseTo(queueBottom, 5);
+      const dock = heroDock(stage);
+      expect(layout.copy.bottom).toBeGreaterThan(queueBottom);
+      expect(layout.copy.left + layout.copy.width).toBeLessThan(
+        (stage.width - dock.width) / 2,
+      );
+      expect((stage.width + dock.width) / 2).toBeLessThan(slots[0]!.x);
       expect(layout.copy.left + layout.copy.width).toBeLessThan(slots[0]!.x);
       expect(layout.title.bottom).toBeGreaterThan(
         layout.copy.bottom + layout.copy.height,
@@ -187,9 +194,9 @@ describe("the logo in a miniature", () => {
       const slotScale = slot.width / stage.width;
       const move = queueTitleTransform(stage, layout.title);
       // On screen, the logo box in a miniature against the true-scale one.
-      expect(move.scale).toBeGreaterThan(TITLE_SCALE.rest * 1.5);
+      expect(move.scale).toBeGreaterThan(slotScale);
       const onScreenWidth = layout.title.width * move.scale * slotScale;
-      expect(onScreenWidth).toBeGreaterThan(slot.width * 0.3);
+      expect(onScreenWidth).toBeGreaterThan(slot.width * 0.2);
       expect(onScreenWidth).toBeLessThanOrEqual(slot.width * 0.41);
       const left = layout.title.left + move.x;
       const bottom = layout.title.bottom - move.y;
@@ -329,4 +336,23 @@ describe("a tall stage", () => {
       expect([...stops].sort((a, b) => a - b)).toEqual(stops);
     },
   );
+});
+
+describe("the approved tablet rhythm", () => {
+  it("keeps its single preview exactly level with the centre dock", () => {
+    const stage = { width: 1048, height: (1048 * 9) / 16 };
+    const [slot] = queueSlots(stage);
+    const dock = heroDock(stage);
+    expect(queueCount(stage)).toBe(1);
+    expect(slot!.height).toBe(102);
+    expect(slot!.width).toBeCloseTo(251.52);
+    expect(slot!.y).toBe(stage.height - dock.bottom - dock.height);
+    expect(queueIndices(8, 10, queueCount(stage))).toEqual([9]);
+  });
+  it("keeps a short pool unique at either responsive count", () => {
+    for (const count of [1, 2, 3]) {
+      expect(queueIndices(0, 2, count)).toEqual([1]);
+      expect(queueIndices(0, 1, count)).toEqual([]);
+    }
+  });
 });

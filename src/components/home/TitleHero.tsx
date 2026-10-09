@@ -22,7 +22,6 @@ import {
 import { HeroComposition, createCompositionMotion } from "./HeroComposition";
 import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
 import {
-  HANDOVER_GRADIENT,
   HERO_HEIGHT_CLASS,
   HERO_MOTION,
   HERO_TRAILER_DELAY_MS,
@@ -132,8 +131,8 @@ export function TitleHero({
   }, [composition, overview, titleScale]);
   useEffect(() => {
     const controls = animate(overview, isOverviewOpen ? 1 : 0, {
-      duration: reduceMotion ? 0 : 0.32,
-      ease: isOverviewOpen ? HERO_MOTION.settleEase : HERO_MOTION.travelEase,
+      duration: reduceMotion ? 0 : HERO_MOTION.overviewS,
+      ease: HERO_MOTION.travelEase,
     });
     return () => controls.stop();
   }, [isOverviewOpen, overview, reduceMotion]);
@@ -227,7 +226,7 @@ export function TitleHero({
   return (
     <section
       ref={sectionRef}
-      className={`relative w-full overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
     >
       {stage && layout ? (
         <HeroComposition
@@ -308,13 +307,6 @@ export function TitleHero({
           ) : null}
         </motion.div>
       ) : null}
-
-      {/* The page continues below; the hero hands over to it. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] h-[12%]"
-        style={{ background: HANDOVER_GRADIENT }}
-      />
     </section>
   );
 }

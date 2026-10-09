@@ -4,14 +4,14 @@ import { heroRoundCount, heroRowParts } from "./HeroActions";
 const resumed = { canStartOver: true, hasOverview: true, isFilm: false };
 
 describe("the hero's action row", () => {
-  it("keeps a phone's home row to three rounds, starting over on the title's page", () => {
+  it("preserves start over alongside the three labelled dock actions", () => {
     const parts = heroRowParts({
       ...resumed,
       compact: true,
       onTitlePage: false,
     });
-    expect(parts.startOver).toBe(false);
-    expect(heroRoundCount(parts)).toBe(3);
+    expect(parts.startOver).toBe(true);
+    expect(heroRoundCount(parts)).toBe(4);
   });
 
   it("keeps starting over on a phone's title page, where details are below", () => {
@@ -21,8 +21,8 @@ describe("the hero's action row", () => {
       onTitlePage: true,
     });
     expect(parts.startOver).toBe(true);
-    expect(parts.details).toBeNull();
-    expect(parts.overview).toBe(false);
+    expect(parts.details).toBe("pill");
+    expect(parts.overview).toBe(true);
   });
 
   it("gives a full row start over beside the Details pill", () => {
@@ -36,6 +36,6 @@ describe("the hero's action row", () => {
       details: "pill",
       overview: true,
     });
-    expect(heroRoundCount(parts)).toBe(3);
+    expect(heroRoundCount(parts)).toBe(4);
   });
 });

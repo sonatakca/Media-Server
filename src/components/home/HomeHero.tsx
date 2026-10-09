@@ -50,7 +50,6 @@ import {
   type CompositionMotion,
 } from "./HeroComposition";
 import {
-  HANDOVER_GRADIENT,
   HERO_DWELL_MS,
   HERO_HEIGHT_CLASS,
   HERO_MOTION,
@@ -63,6 +62,7 @@ import {
   liftDurationS,
   previousIndex,
   pushedBackPlacement,
+  queueCount,
   queueIndices,
   queueSlots,
   sharedDurationS,
@@ -300,7 +300,9 @@ export function HomeHero({
         ? items.findIndex((item) => item.Id === currentId)
         : -1;
       const index = kept >= 0 ? kept : 0;
-      const queueIds = queueIndices(index, total).map((i) => items[i]!.Id);
+      const queueIds = queueIndices(index, total, queueCount(size)).map(
+        (i) => items[i]!.Id,
+      );
       const stageId = items[index]!.Id;
       for (const id of [...motions.current.keys()]) {
         if (id !== stageId && !queueIds.includes(id))
@@ -339,7 +341,7 @@ export function HomeHero({
     motions.current.clear();
     stageIndexRef.current = 0;
     setStageIndex(0);
-    const queue = queueIndices(0, total);
+    const queue = queueIndices(0, total, queueCount(size));
     const first = items[0]!;
     motionFor(first.Id, stagePlacement());
     queue.forEach((index, position) => {
@@ -363,17 +365,29 @@ export function HomeHero({
   useEffect(() => {
     if (!stage || busyRef.current) return;
     const slots = queueSlots(stage);
-    const queue = queueIndices(stageIndexRef.current, total);
+    const queue = queueIndices(stageIndexRef.current, total, queueCount(stage));
     const stageId = items[stageIndexRef.current]?.Id;
     if (stageId) {
       const entry = motions.current.get(stageId);
       if (entry) place(entry, stagePlacement());
     }
     queue.forEach((index, position) => {
-      const entry = motions.current.get(items[index]!.Id);
-      if (entry) place(entry, slotPlacement(stage, slots[position]!));
+      const entry = motionFor(
+        items[index]!.Id,
+        slotPlacement(stage, slots[position]!),
+        QUEUE_DIM,
+      );
+      place(entry, slotPlacement(stage, slots[position]!));
     });
-  }, [hasOpened, items, stage, total]);
+    if (stageId)
+      setLayers([
+        { id: stageId, role: "stage" },
+        ...queue.map((index) => ({
+          id: items[index]!.Id,
+          role: "queue" as Role,
+        })),
+      ]);
+  }, [hasOpened, isTravelling, items, motionFor, stage, total]);
 
   // ------------------------------------------------------------ the opening
   const open = useCallback(async () => {
@@ -381,7 +395,7 @@ export function HomeHero({
     if (!size || hasOpened || busyRef.current) return;
     busyRef.current = true;
     const slots = queueSlots(size);
-    const queue = queueIndices(0, total);
+    const queue = queueIndices(0, total, queueCount(size));
     const first = items[0];
     // No ceremony: the skeleton fades off as the artwork fades in, and the
     // copy and the queue fade up in the places their placeholders held.
@@ -427,12 +441,12 @@ export function HomeHero({
       progress.set(0);
 
       const fromIndex = stageIndexRef.current;
-      const oldQueue = queueIndices(fromIndex, total);
+      const oldQueue = queueIndices(fromIndex, total, queueCount(size));
       const toIndex =
         direction === "forward"
           ? oldQueue[Math.min(queuePosition, oldQueue.length - 1)]!
           : previousIndex(fromIndex, total);
-      const newQueue = queueIndices(toIndex, total);
+      const newQueue = queueIndices(toIndex, total, queueCount(size));
       const slots = queueSlots(size);
       const outgoing = items[fromIndex]!;
       const incoming = items[toIndex]!;
@@ -662,8 +676,8 @@ export function HomeHero({
   );
   useEffect(() => {
     const controls = animate(overview, isOverviewOpen ? 1 : 0, {
-      duration: reduceMotion ? 0 : 0.32,
-      ease: isOverviewOpen ? HERO_MOTION.settleEase : HERO_MOTION.travelEase,
+      duration: reduceMotion ? 0 : HERO_MOTION.overviewS,
+      ease: HERO_MOTION.travelEase,
     });
     return () => controls.stop();
   }, [isOverviewOpen, overview, reduceMotion]);
@@ -874,9 +888,11 @@ export function HomeHero({
   const isCompact = layout?.actions === "compact";
   // While the overview spans the queue's row, the queue takes no taps.
   const isQueueAside = isTall && isOverviewOpen;
-  const queueIds = queueIndices(stageIndex, total).map(
-    (index) => items[index]!.Id,
-  );
+  const queueIds = queueIndices(
+    stageIndex,
+    total,
+    stage ? queueCount(stage) : QUEUE_LENGTH,
+  ).map((index) => items[index]!.Id);
   const headSlot = slots[0];
   // A phone's pill holds touch-sized buttons, so it stands taller.
   const controlsTop = headSlot ? headSlot.y - (isCompact ? 62 : 54) : 0;
@@ -904,7 +920,7 @@ export function HomeHero({
     return (
       <section
         ref={sectionRef}
-        className={`relative w-full bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
+        className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
       />
     );
   }
@@ -912,7 +928,7 @@ export function HomeHero({
   return (
     <section
       ref={sectionRef}
-      className={`seyirlik-home-hero relative w-full touch-pan-y overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-home-hero seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl touch-pan-y overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
       aria-roledescription="carousel"
       aria-label={t("hero.featured")}
       onKeyDown={(event) => {
@@ -974,6 +990,7 @@ export function HomeHero({
                 }
                 motion={entry}
                 slotScale={slotScale}
+                slotHeight={slots[0]?.height}
                 titleRestScale={layout!.titleScale.rest}
                 opacity={
                   isTall && (layer.role === "queue" || layer.role === "leaving")
@@ -1215,15 +1232,6 @@ export function HomeHero({
           />
         </motion.div>
       ) : null}
-
-      {/* The page continues below; the hero hands over to it in a short
-          band that stays clear until near the edge, so the artwork above it
-          is not dimmed. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] h-[12%]"
-        style={{ background: HANDOVER_GRADIENT }}
-      />
     </section>
   );
 }

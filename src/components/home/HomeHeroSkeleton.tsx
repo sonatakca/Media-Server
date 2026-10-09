@@ -1,20 +1,13 @@
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
-import { Info, Play } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import type { MediaItem } from "../../lib/types";
-import {
-  DETAILS_PILL,
-  PLAY_PILL,
-  PLAY_TIME_LEFT,
-  heroPlayState,
-  heroRoundCount,
-  heroRowParts,
-} from "./HeroActions";
+import { heroPlayState, heroRoundCount, heroRowParts } from "./HeroActions";
 import {
   COPY_ROWS,
   HERO_HEIGHT_CLASS,
   heroLayout,
+  heroDock,
   queueSlots,
   type HeroFit,
   type StageSize,
@@ -26,13 +19,6 @@ import {
  * that replaces it — so the hand-over from loading to content moves nothing.
  */
 
-/** Sizes of the hero's own controls, as it renders them. */
-const ACTIONS = {
-  roundPx: 48,
-  gapPx: 10,
-  /** A compact row sits a little closer, to leave play its label. */
-  compactGapPx: 6,
-} as const;
 const CONTROLS = {
   widthPx: 197,
   /** A phone's pill: pause and the position alone, at touch size. */
@@ -91,7 +77,7 @@ export function HomeHeroSkeletonPieces({
   const head = slots[0]!;
   const last = slots[slots.length - 1]!;
   const copyTop = stage.height - layout.copy.bottom - layout.copy.height;
-  const actionsTop = stage.height - layout.copy.bottom - COPY_ROWS.actionsPx;
+  const dock = heroDock(stage);
   const rest = layout.titleScale.rest;
   const logoWidth = layout.title.width * rest;
   const logoHeight = layout.title.height * rest * LOGO_HEIGHT_SHARE;
@@ -108,13 +94,6 @@ export function HomeHeroSkeletonPieces({
       : true,
   });
   const rounds = heroRoundCount(parts);
-  const timeLeft = play?.progress
-    ? t("hero.timeLeft").replace("{time}", play.progress.left)
-    : null;
-  // A compact row is play, stretched, and the round buttons after it.
-  const compactPlayPx =
-    layout.copy.width - rounds * (ACTIONS.roundPx + ACTIONS.compactGapPx);
-
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
       <div
@@ -139,47 +118,21 @@ export function HomeHeroSkeletonPieces({
         <div className="shimmer h-5 w-14 rounded-md" />
       </div>
       <div
-        className="absolute flex items-center"
+        className={`absolute hero-dock ${dock.compact ? "hero-dock-compact" : ""}`}
         style={{
-          left: layout.copy.left,
-          top: actionsTop,
-          gap: isCompact ? ACTIONS.compactGapPx : ACTIONS.gapPx,
+          left: (stage.width - dock.width) / 2,
+          bottom: dock.bottom,
+          width: dock.width,
         }}
       >
-        {/* A full row's pills are sized by their own, unseen, labels. */}
-        {isCompact ? (
-          <div
-            className="shimmer rounded-full"
-            style={{ width: compactPlayPx, height: COPY_ROWS.actionsPx }}
-          />
-        ) : (
-          <div className={`shimmer ${PLAY_PILL}`}>
-            <span className="invisible inline-flex items-center gap-2">
-              <Play size={19} className="shrink-0" />
-              <span>{play?.playLabel ?? t("common.play")}</span>
-              {timeLeft ? (
-                <span className={PLAY_TIME_LEFT}>{timeLeft}</span>
-              ) : null}
+        <div className="shimmer hero-dock-play" />
+        <div className="hero-dock-row">
+          {Array.from({ length: rounds }, (_, index) => (
+            <span key={index} className="flex justify-center">
+              <span className="shimmer h-3 w-10 rounded-full" />
             </span>
-          </div>
-        )}
-        {/* In the row's own order: start over comes before "Details". */}
-        {Array.from({ length: rounds }, (_, index) => (
-          <Fragment key={index}>
-            {parts.details === "pill" && index === Number(parts.startOver) ? (
-              <div className={`shimmer ${DETAILS_PILL}`}>
-                <span className="invisible inline-flex items-center gap-2">
-                  <Info size={19} />
-                  {t("common.details")}
-                </span>
-              </div>
-            ) : null}
-            <div
-              className="shimmer rounded-full"
-              style={{ width: ACTIONS.roundPx, height: ACTIONS.roundPx }}
-            />
-          </Fragment>
-        ))}
+          ))}
+        </div>
       </div>
 
       {withQueue ? (
@@ -244,7 +197,7 @@ export function HomeHeroSkeleton({ fit = "screen" }: { fit?: HeroFit }) {
   return (
     <section
       ref={ref}
-      className={`relative w-full overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
     >
       <HomeHeroSkeletonBackdrop />
       {stage ? <HomeHeroSkeletonPieces stage={stage} /> : null}
@@ -284,7 +237,7 @@ export function TitleHeroSkeleton({
   return (
     <section
       ref={ref}
-      className={`relative w-full overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
+      className={`seyirlik-hero-stage relative mx-4 my-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden ${HERO_HEIGHT_CLASS[fit]}`}
     >
       <HomeHeroSkeletonBackdrop />
       {stage ? (

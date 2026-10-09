@@ -239,7 +239,7 @@ export function HomeSkeleton() {
 
   return (
     <div className="layout-no-offset">
-      <div className="min-h-[100svh] full-bleed">
+      <div className="full-bleed flow-root">
         {/* Placed from the hero's own geometry, so nothing moves when it
             arrives. */}
         <HomeHeroSkeleton />
@@ -670,7 +670,7 @@ function HeroLibrarySkeleton({
         className="shimmer fixed right-5 top-24 z-[80] h-10 rounded-full lg:right-8"
         style={{ width: kind === "show" ? 294 : 218 }}
       />
-      <div className="full-bleed relative min-h-[100svh]">
+      <div className="full-bleed relative flow-root">
         <TitleHeroSkeleton
           item={item}
           canDownload={kind === "movie" && isOfflineSupported()}

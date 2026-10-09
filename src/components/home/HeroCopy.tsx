@@ -1,7 +1,6 @@
 import {
   useEffect,
   useId,
-  useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
@@ -33,6 +32,7 @@ import { copyShadowFor } from "./heroCopyShadow";
 import {
   COPY_ROWS,
   HERO_MOTION,
+  heroDock,
   type HeroLayout,
   type StageSize,
 } from "./homeHeroModel";
@@ -42,12 +42,6 @@ import {
  * overview on request, and the ways in. Shared by the home hero and a
  * title's own page, so both read and behave alike.
  */
-
-/**
- * How long the pointer rests on the title before its overview opens, so
- * passing over it on the way somewhere else opens nothing.
- */
-const OVERVIEW_HOVER_INTENT_MS = 260;
 
 /**
  * The title and its copy, as one hover target. The block reaches up over the
@@ -82,84 +76,99 @@ export function HeroCopyBlock({
   reduceMotion: boolean;
   smartContinueItems: MediaItem[];
 }) {
-  const intentRef = useRef(0);
-  const itemId = item?.Id;
-  useEffect(() => () => window.clearTimeout(intentRef.current), [itemId]);
-
+  const overviewId = useId();
+  const dock = heroDock(stage);
   return (
-    <div
-      className="absolute z-[6]"
-      style={{
-        left: layout.copy.left - 16,
-        bottom: layout.copy.bottom,
-        width: Math.max(layout.copy.width, layout.title.width) + 32,
-        // The resting title and its copy; while open, the risen, full-size
-        // title too, so the pointer can move onto it without closing it.
-        height:
-          layout.title.bottom -
-          layout.copy.bottom +
-          12 +
-          (isOverviewOpen
-            ? layout.title.height + layout.overviewLift
-            : layout.title.height * layout.titleScale.rest),
-        pointerEvents: item ? "auto" : "none",
-      }}
-      onMouseEnter={() => {
-        window.clearTimeout(intentRef.current);
-        intentRef.current = window.setTimeout(
-          () => onHoverIntent(true),
-          OVERVIEW_HOVER_INTENT_MS,
-        );
-      }}
-      onMouseLeave={() => {
-        window.clearTimeout(intentRef.current);
-        onHoverIntent(false);
-      }}
-      onFocus={(event) => {
-        if (event.target.matches(":focus-visible")) onFocusWithin(true);
-      }}
-      onBlur={(event) => {
-        if (
-          !(event.relatedTarget instanceof Node) ||
-          !event.currentTarget.contains(event.relatedTarget)
-        )
-          onFocusWithin(false);
-      }}
-    >
+    <>
       <div
-        className="absolute"
+        className="absolute z-[6]"
         style={{
-          left: 16,
-          bottom: 0,
-          width: layout.copy.width,
-          height: layout.copy.height,
+          left: layout.copy.left - 16,
+          bottom: layout.copy.bottom,
+          width: Math.max(layout.copy.width, layout.title.width) + 32,
+          // The resting title and its copy; while open, the risen, full-size
+          // title too, so the pointer can move onto it without closing it.
+          height:
+            layout.title.bottom -
+            layout.copy.bottom +
+            12 +
+            (isOverviewOpen
+              ? layout.title.height + layout.overviewLift
+              : layout.title.height * layout.titleScale.rest),
+          pointerEvents: item ? "auto" : "none",
+        }}
+        onMouseEnter={() => onHoverIntent(true)}
+        onMouseLeave={() => onHoverIntent(false)}
+        onFocus={(event) => {
+          if (event.target.matches(":focus-visible")) onFocusWithin(true);
+        }}
+        onBlur={(event) => {
+          if (
+            !(event.relatedTarget instanceof Node) ||
+            !event.currentTarget.contains(event.relatedTarget)
+          )
+            onFocusWithin(false);
         }}
       >
-        <AnimatePresence mode="wait">
-          {item ? (
-            <HeroCopy
-              key={item.Id}
-              item={item}
-              stage={stage}
-              layout={layout}
-              factsRegion={{
-                left: layout.copy.left / stage.width,
-                top:
-                  1 - (layout.copy.bottom + layout.copy.height) / stage.height,
-                width: Math.min(layout.factsWidth, 340) / stage.width,
-                height: COPY_ROWS.factsPx / stage.height,
-              }}
-              overview={overview}
-              isOverviewOpen={isOverviewOpen}
-              onToggleOverview={onToggleOverview}
-              onShowDetails={onShowDetails}
-              reduceMotion={reduceMotion}
-              smartContinueItems={smartContinueItems}
-            />
-          ) : null}
-        </AnimatePresence>
+        <div
+          className="absolute"
+          style={{
+            left: 16,
+            bottom: 0,
+            width: layout.copy.width,
+            height: layout.copy.height,
+          }}
+        >
+          <AnimatePresence mode="wait">
+            {item ? (
+              <HeroCopy
+                key={item.Id}
+                item={item}
+                stage={stage}
+                layout={layout}
+                factsRegion={{
+                  left: layout.copy.left / stage.width,
+                  top:
+                    1 -
+                    (layout.copy.bottom + layout.copy.height) / stage.height,
+                  width: Math.min(layout.factsWidth, 340) / stage.width,
+                  height: COPY_ROWS.factsPx / stage.height,
+                }}
+                overviewId={overviewId}
+                overview={overview}
+                isOverviewOpen={isOverviewOpen}
+                onToggleOverview={onToggleOverview}
+                onShowDetails={onShowDetails}
+                reduceMotion={reduceMotion}
+                smartContinueItems={smartContinueItems}
+              />
+            ) : null}
+          </AnimatePresence>
+        </div>
       </div>
-    </div>
+      {layout.form === "wide" ? (
+        <div
+          className="absolute z-[6] -translate-x-1/2"
+          style={{ left: "50%", bottom: dock.bottom, width: dock.width }}
+        >
+          <AnimatePresence mode="wait">
+            {item ? (
+              <HeroDock
+                key={item.Id}
+                item={item}
+                smartContinueItems={smartContinueItems}
+                compact={dock.compact}
+                reduceMotion={reduceMotion}
+                overviewId={overviewId}
+                isOverviewOpen={isOverviewOpen}
+                onToggleOverview={onToggleOverview}
+                onShowDetails={onShowDetails}
+              />
+            ) : null}
+          </AnimatePresence>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -276,6 +285,7 @@ function HeroCopy({
   stage,
   layout,
   factsRegion,
+  overviewId,
   overview,
   isOverviewOpen,
   onToggleOverview,
@@ -288,6 +298,7 @@ function HeroCopy({
   layout: HeroLayout;
   /** Where the facts line lies over the artwork, as shares of it. */
   factsRegion: SampleRegion;
+  overviewId: string;
   /** 0–1: the overview opening under the facts. */
   overview: MotionValue<number>;
   isOverviewOpen: boolean;
@@ -298,7 +309,6 @@ function HeroCopy({
   smartContinueItems: MediaItem[];
 }) {
   const { language, t } = useLanguage();
-  const navigate = useNavigate();
   const shade = useCopyShade(item, stage, layout, factsRegion);
   const labels = {
     season: t("media.seasonNumber"),
@@ -315,14 +325,6 @@ function HeroCopy({
     .filter(Boolean)
     .join("  ·  ");
 
-  const { playItem, playLabel, shortPlayLabel, canStartOver, progress } =
-    heroPlayState(item, smartContinueItems, t);
-  const playTo =
-    playItem.Type === "Series"
-      ? getRouteForItem(playItem)
-      : `/watch/${playItem.Id}`;
-
-  const overviewId = useId();
   const factsY = useTransform(
     overview,
     (value) => -value * layout.overviewLift,
@@ -333,12 +335,7 @@ function HeroCopy({
     [0, 1],
     [layout.overviewHeight + OVERVIEW_SHADE_FOOT_PX, 0],
   );
-  const overviewOpacity = useTransform(overview, [0, 0.45, 1], [0, 0.7, 1]);
-
-  const handlePlay = async (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    navigate(await getPlayTargetForItem(playItem));
-  };
+  const overviewOpacity = overview;
 
   // The copy changes with the title by fading in place: only the title and
   // the artwork travel.
@@ -395,7 +392,10 @@ function HeroCopy({
             left: -OVERVIEW_SHADE_ROOM_PX,
             right: -OVERVIEW_SHADE_ROOM_PX,
             bottom:
-              COPY_ROWS.actionsPx + layout.actionsGap - OVERVIEW_SHADE_FOOT_PX,
+              (layout.form === "wide"
+                ? 0
+                : COPY_ROWS.actionsPx + layout.actionsGap) -
+              OVERVIEW_SHADE_FOOT_PX,
             height:
               layout.overviewHeight +
               OVERVIEW_SHADE_ROOM_PX +
@@ -417,33 +417,96 @@ function HeroCopy({
           </motion.p>
         </div>
       ) : null}
-      {/* Not faded here: each action fades its own surface (see HeroActions). */}
-      <div
-        className="absolute inset-x-0 bottom-0"
-        style={{ height: COPY_ROWS.actionsPx }}
-      >
-        <HeroActions
-          item={item}
-          playTo={playTo}
-          playLabel={playLabel}
-          shortPlayLabel={shortPlayLabel}
-          onPlay={handlePlay}
-          startOverTo={
-            canStartOver
-              ? `${playTo}${playTo.includes("?") ? "&" : "?"}start=0`
-              : null
-          }
-          detailsTo={getRouteForItem(item)}
-          progress={progress}
-          overviewId={overviewId}
-          hasOverview={Boolean(metadata.overview)}
-          isOverviewOpen={isOverviewOpen}
-          onToggleOverview={onToggleOverview}
-          onShowDetails={onShowDetails}
-          compact={layout.actions === "compact"}
-          fade={line(1)}
-        />
-      </div>
+      {layout.form === "tall" ? (
+        <div
+          className="absolute bottom-0"
+          style={{
+            width: heroDock(stage).width,
+            left: (layout.copy.width - heroDock(stage).width) / 2,
+          }}
+        >
+          <HeroDock
+            item={item}
+            smartContinueItems={smartContinueItems}
+            compact
+            reduceMotion={reduceMotion}
+            overviewId={overviewId}
+            isOverviewOpen={isOverviewOpen}
+            onToggleOverview={onToggleOverview}
+            onShowDetails={onShowDetails}
+          />
+        </div>
+      ) : null}
+    </motion.div>
+  );
+}
+
+/** The centre dock has its own hit area, independent of the logo's hover. */
+function HeroDock({
+  item,
+  smartContinueItems,
+  compact,
+  reduceMotion,
+  overviewId,
+  isOverviewOpen,
+  onToggleOverview,
+  onShowDetails,
+}: {
+  item: MediaItem;
+  smartContinueItems: MediaItem[];
+  compact: boolean;
+  reduceMotion: boolean;
+  overviewId: string;
+  isOverviewOpen: boolean;
+  onToggleOverview: () => void;
+  onShowDetails?: () => void;
+}) {
+  const { language, t } = useLanguage();
+  const navigate = useNavigate();
+  const { playItem, playLabel, shortPlayLabel, canStartOver, progress } =
+    heroPlayState(item, smartContinueItems, t);
+  const playTo =
+    playItem.Type === "Series"
+      ? getRouteForItem(playItem)
+      : `/watch/${playItem.Id}`;
+  const handlePlay = async (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    navigate(await getPlayTargetForItem(playItem));
+  };
+  const fade = {
+    initial: { opacity: 0 },
+    animate: {
+      opacity: 1,
+      transition: { duration: reduceMotion ? 0 : HERO_MOTION.copyEnterS },
+    },
+    exit: {
+      opacity: 0,
+      transition: { duration: reduceMotion ? 0 : HERO_MOTION.copyExitS },
+    },
+  };
+  return (
+    <motion.div initial="initial" animate="animate" exit="exit">
+      <HeroActions
+        item={item}
+        playTo={playTo}
+        playLabel={playLabel}
+        shortPlayLabel={shortPlayLabel}
+        onPlay={handlePlay}
+        startOverTo={
+          canStartOver
+            ? `${playTo}${playTo.includes("?") ? "&" : "?"}start=0`
+            : null
+        }
+        detailsTo={getRouteForItem(item)}
+        progress={progress}
+        overviewId={overviewId}
+        hasOverview={Boolean(getItemDisplayMetadata(item, language).overview)}
+        isOverviewOpen={isOverviewOpen}
+        onToggleOverview={onToggleOverview}
+        onShowDetails={onShowDetails}
+        compact={compact}
+        fade={fade}
+      />
     </motion.div>
   );
 }

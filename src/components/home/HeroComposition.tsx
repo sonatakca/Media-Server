@@ -101,6 +101,7 @@ interface HeroCompositionProps {
   motion: CompositionMotion;
   /** The scale a slot holds a composition at; corners round in step with it. */
   slotScale: number;
+  slotHeight?: number;
   /** The title's own scale at rest, which its box is measured at. */
   titleRestScale?: number;
   /**
@@ -130,6 +131,7 @@ export function HeroComposition({
   logoMaxHeight,
   motion: m,
   slotScale,
+  slotHeight,
   titleRestScale = TITLE_SCALE.rest,
   opacity,
   zIndex,
@@ -190,12 +192,20 @@ export function HeroComposition({
     [stage, titleBox, titleRestScale],
   );
 
+  // Crop the wider tablet miniature without changing its travel scale.
+  const queueHeight = slotHeight ? slotHeight / slotScale : stage.height;
+  const frameHeight = useTransform(
+    m.scale,
+    (scale) =>
+      queueHeight + (stage.height - queueHeight) * stageness(scale, slotScale),
+  );
+
   // In a slot the logo is drawn large at the miniature's bottom-left so it
   // reads at that size; on stage it is at its own place and size. Between
   // the two it follows the frame's scale, so a lift carries it smoothly.
   const queueMove = useMemo(
-    () => queueTitleTransform(stage, titleBox),
-    [stage, titleBox],
+    () => queueTitleTransform({ ...stage, height: queueHeight }, titleBox),
+    [stage, titleBox, queueHeight],
   );
   const toStage = useTransform(m.scale, (scale) => stageness(scale, slotScale));
   const titleX = useTransform(toStage, (p) => queueMove.x * (1 - p));
@@ -259,7 +269,7 @@ export function HeroComposition({
       className="absolute left-0 top-0 overflow-hidden bg-[#050607]"
       style={{
         width: stage.width,
-        height: stage.height,
+        height: frameHeight,
         x: m.x,
         y: m.y,
         scale: m.scale,
