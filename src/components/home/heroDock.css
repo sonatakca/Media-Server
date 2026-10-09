@@ -35,6 +35,9 @@
     0 18px 44px -14px rgba(0, 0, 0, 0.75),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
+.hero-dock:has(> .hero-dock-restart) {
+  --dock-gap: 4px;
+}
 .hero-dock-compact {
   --dock-pad: 6px;
   --dock-play: 48px;
@@ -93,8 +96,8 @@
   height: var(--dock-row);
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 0 6px;
+  gap: 4px;
+  padding: 0 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.88);
@@ -144,8 +147,12 @@
 }
 .hero-dock-compact .hero-dock-action {
   font-size: 11px;
-  padding: 0 4px;
-  gap: 4px;
+  padding: 0 3px;
+  gap: 3px;
+}
+.hero-dock-compact .hero-dock-action svg {
+  width: 14px;
+  height: 14px;
 }
 .phone-title-dock {
   position: fixed;
@@ -154,9 +161,6 @@
   width: min(300px, calc(100% - 32px));
   transform: translateX(-50%);
   bottom: calc(6.25rem + env(safe-area-inset-bottom));
-}
-.phone-title-dock .hero-dock-row:has(> .hero-dock-extra) > .hero-dock-restart {
-  flex-basis: calc(100% - 36px);
 }
 .phone-title-dock .hero-dock {
   --dock-row: 36px;

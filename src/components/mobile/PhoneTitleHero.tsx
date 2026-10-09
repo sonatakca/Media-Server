@@ -346,6 +346,21 @@ export function PhoneTitleHero({
                         ) : null}
                       </Link>
                     </span>
+                    {canStartOver ? (
+                      <span className="hero-dock-restart">
+                        <Link
+                          to={`${playTo}${playTo.includes("?") ? "&" : "?"}start=0`}
+                          aria-label={t("details.playFromBeginning")}
+                          className={PHONE_TITLE_HERO_ACTION}
+                        >
+                          <RotateCcw
+                            size={PHONE_TITLE_ACTION_ICON}
+                            strokeWidth={2}
+                          />
+                          <span>{t("details.startOverShort")}</span>
+                        </Link>
+                      </span>
+                    ) : null}
                     <div className={PHONE_TITLE_HERO_ROW}>
                       {onShowDetails ? (
                         <button
@@ -372,23 +387,6 @@ export function PhoneTitleHero({
                         ref={onWatchedSlot}
                         className={PHONE_TITLE_HERO_ACTION_SLOT}
                       />
-                      {canStartOver ? (
-                        <span
-                          className={`${PHONE_TITLE_HERO_ACTION_SLOT} hero-dock-restart`}
-                        >
-                          <Link
-                            to={`${playTo}${playTo.includes("?") ? "&" : "?"}start=0`}
-                            aria-label={t("details.playFromBeginning")}
-                            className={PHONE_TITLE_HERO_ACTION}
-                          >
-                            <RotateCcw
-                              size={PHONE_TITLE_ACTION_ICON}
-                              strokeWidth={2}
-                            />
-                            <span>{t("details.startOverShort")}</span>
-                          </Link>
-                        </span>
-                      ) : null}
                       {item.Type === "Movie" && isOfflineSupported() ? (
                         <span className="hero-dock-extra">
                           <DownloadButton

@@ -126,6 +126,9 @@ export function HomeHeroSkeletonPieces({
         }}
       >
         <div className="shimmer hero-dock-play" />
+        {parts.startOver ? (
+          <div className="shimmer hero-dock-action hero-dock-restart" />
+        ) : null}
         <div className="hero-dock-row">
           {Array.from({ length: rounds }, (_, index) => (
             <span key={index} className="flex justify-center">

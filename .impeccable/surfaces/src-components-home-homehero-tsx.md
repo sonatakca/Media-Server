@@ -55,3 +55,8 @@ radii between 12px (preview) and 16px (stage) throughout carousel travel. Fade t
 centre dock as one surface, including glass and controls. Separate labelled
 lower actions by 4px, show the translated short restart label, and wrap overflow
 actions rather than truncate them.
+
+Restart owns a full third level directly below Play/Continue when available;
+the remaining actions follow below. Without restart, keep two levels. Trailer
+and sound controls appear to the left of the right-anchored carousel controls,
+so Previous/Pause/Next never move when those optional controls change.

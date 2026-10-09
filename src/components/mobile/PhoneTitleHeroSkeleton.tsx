@@ -45,10 +45,8 @@ export function PhoneTitleHeroSkeleton({
     : "";
   // Start over (a film knows its own place; a series' next episode is not
   // known yet), My List, watched, and download on a film where it can be.
-  const actions =
-    Number(item?.Type === "Movie" && canStartOverFromHero(item)) +
-    3 +
-    Number(kind === "movie" && isOfflineSupported());
+  const canStartOver = item?.Type === "Movie" && canStartOverFromHero(item);
+  const actions = 3 + Number(kind === "movie" && isOfflineSupported());
 
   return (
     <section className={PHONE_TITLE_HERO_SECTION}>
@@ -89,6 +87,9 @@ export function PhoneTitleHeroSkeleton({
             className={`${PHONE_TITLE_HERO_ACTIONS} hero-dock hero-dock-compact`}
           >
             <div className={`shimmer rounded-full ${PHONE_TITLE_HERO_PLAY}`} />
+            {canStartOver ? (
+              <div className="shimmer hero-dock-action hero-dock-restart" />
+            ) : null}
             <div className={PHONE_TITLE_HERO_ROW}>
               {Array.from({ length: actions }, (_, index) => (
                 <span key={index} className={PHONE_TITLE_HERO_ACTION_SLOT}>

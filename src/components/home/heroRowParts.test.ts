@@ -11,7 +11,7 @@ describe("the hero's action row", () => {
       onTitlePage: false,
     });
     expect(parts.startOver).toBe(true);
-    expect(heroRoundCount(parts)).toBe(4);
+    expect(heroRoundCount(parts)).toBe(3);
   });
 
   it("keeps starting over on a phone's title page, where details are below", () => {
@@ -36,6 +36,6 @@ describe("the hero's action row", () => {
       details: "pill",
       overview: true,
     });
-    expect(heroRoundCount(parts)).toBe(4);
+    expect(heroRoundCount(parts)).toBe(3);
   });
 });

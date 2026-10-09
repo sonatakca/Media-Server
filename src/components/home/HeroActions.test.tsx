@@ -30,7 +30,7 @@ const fade = {
   animate: { opacity: 1 },
   exit: { opacity: 0 },
 };
-function dock() {
+function dock(startOverTo: string | null = "/watch/film?start=0") {
   return render(
     <MemoryRouter>
       <HeroActions
@@ -38,7 +38,7 @@ function dock() {
         playTo="/watch/film"
         playLabel="Continue"
         onPlay={() => {}}
-        startOverTo="/watch/film?start=0"
+        startOverTo={startOverTo}
         detailsTo="/movies/film"
         progress={null}
         overviewId="overview"
@@ -61,6 +61,23 @@ describe("hero dock", () => {
         (e) => e.style.opacity,
       ),
     ).toEqual([]);
+  });
+  it("places restart directly below play and above the other actions", () => {
+    const { container } = dock();
+    const surface = container.querySelector(".hero-dock")!;
+    expect(surface.children[1]).toContainElement(
+      screen.getByRole("link", { name: "Play from beginning" }),
+    );
+    expect(surface.children[2]).toContainElement(
+      screen.getByRole("link", { name: "Details" }),
+    );
+  });
+  it("keeps two levels when restart is unavailable", () => {
+    const { container } = dock(null);
+    expect(container.querySelector(".hero-dock")!.children).toHaveLength(2);
+    expect(
+      screen.queryByRole("link", { name: "Play from beginning" }),
+    ).toBeNull();
   });
   it("labels restart while keeping the explicit start=0 destination", () => {
     dock();

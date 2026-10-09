@@ -117,7 +117,6 @@ export function heroRowParts({
 /** Controls in the second floor, including My List. */
 export function heroRoundCount(parts: ReturnType<typeof heroRowParts>) {
   return (
-    Number(parts.startOver) +
     Number(Boolean(parts.details)) +
     1 +
     Number(parts.download) +
@@ -223,6 +222,17 @@ export function HeroActions({
           ) : null}
         </Link>
       </span>
+      {startOverTo ? (
+        <Link
+          to={startOverTo}
+          aria-label={t("details.playFromBeginning")}
+          title={t("details.playFromBeginning")}
+          className={`${action} hero-dock-restart`}
+        >
+          <RotateCcw size={16} />
+          <span>{t("details.startOverShort")}</span>
+        </Link>
+      ) : null}
       <div className="hero-dock-row">
         {onShowDetails ? (
           <button type="button" onClick={onShowDetails} className={action}>
@@ -263,17 +273,6 @@ export function HeroActions({
               data-open={isOverviewOpen}
             />
           </button>
-        ) : null}
-        {startOverTo ? (
-          <Link
-            to={startOverTo}
-            aria-label={t("details.playFromBeginning")}
-            title={t("details.playFromBeginning")}
-            className={action}
-          >
-            <RotateCcw size={16} />
-            <span>{t("details.startOverShort")}</span>
-          </Link>
         ) : null}
         {onShowDetails && item.Type === "Movie" && isOfflineSupported() ? (
           <DownloadButton

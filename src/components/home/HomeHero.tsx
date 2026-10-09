@@ -1120,6 +1120,47 @@ export function HomeHero({
               ease: "easeOut",
             }}
           >
+            {trailerUrl ? (
+              <>
+                {isTrailerPlaying ? (
+                  <HeroControlButton
+                    label={
+                      isTrailerMuted ? t("player.unmute") : t("player.mute")
+                    }
+                    onClick={() => setIsTrailerMuted((current) => !current)}
+                  >
+                    {isTrailerMuted ? (
+                      <VolumeX size={16} />
+                    ) : (
+                      <Volume2 size={16} />
+                    )}
+                  </HeroControlButton>
+                ) : null}
+                <HeroControlButton
+                  label={
+                    areTrailersEnabled
+                      ? t("hero.disableTrailers")
+                      : t("hero.enableTrailers")
+                  }
+                  onClick={() => {
+                    const next = !areTrailersEnabled;
+                    saveHeroTrailersEnabledPreference(next);
+                    setAreTrailersEnabled(next);
+                    if (!next) setIsTrailerPlaying(false);
+                  }}
+                >
+                  {areTrailersEnabled ? (
+                    <Video size={16} />
+                  ) : (
+                    <VideoOff size={16} />
+                  )}
+                </HeroControlButton>
+                <span
+                  className="mx-0.5 h-5 w-px bg-white/15"
+                  aria-hidden="true"
+                />
+              </>
+            ) : null}
             {/* A phone's pill has room for the clock alone: a swipe or a tap on
               a miniature moves the queue there. Previous and next stay for
               a keyboard and assistive technology, which have neither, and
@@ -1165,47 +1206,6 @@ export function HomeHero({
                 / {String(total).padStart(2, "0")}
               </span>
             </span>
-            {trailerUrl ? (
-              <>
-                <span
-                  className="mx-0.5 h-5 w-px bg-white/15"
-                  aria-hidden="true"
-                />
-                <HeroControlButton
-                  label={
-                    areTrailersEnabled
-                      ? t("hero.disableTrailers")
-                      : t("hero.enableTrailers")
-                  }
-                  onClick={() => {
-                    const next = !areTrailersEnabled;
-                    saveHeroTrailersEnabledPreference(next);
-                    setAreTrailersEnabled(next);
-                    if (!next) setIsTrailerPlaying(false);
-                  }}
-                >
-                  {areTrailersEnabled ? (
-                    <Video size={16} />
-                  ) : (
-                    <VideoOff size={16} />
-                  )}
-                </HeroControlButton>
-                {isTrailerPlaying ? (
-                  <HeroControlButton
-                    label={
-                      isTrailerMuted ? t("player.unmute") : t("player.mute")
-                    }
-                    onClick={() => setIsTrailerMuted((current) => !current)}
-                  >
-                    {isTrailerMuted ? (
-                      <VolumeX size={16} />
-                    ) : (
-                      <Volume2 size={16} />
-                    )}
-                  </HeroControlButton>
-                ) : null}
-              </>
-            ) : null}
           </motion.div>
         ) : null}
       </motion.div>
