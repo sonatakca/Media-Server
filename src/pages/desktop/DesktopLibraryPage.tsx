@@ -250,6 +250,8 @@ export function DesktopLibraryPage({
   const [chosenSortBy, setSortBy] = useState<LibrarySortMode | null>(null);
   const [readyDetailsId, setReadyDetailsId] = useState<string | null>(null);
   const seriesDetailsRef = useRef<HTMLDivElement | null>(null);
+  // Where the title hero takes the details' watched button.
+  const [watchedSlot, setWatchedSlot] = useState<HTMLSpanElement | null>(null);
   const location = useLocation();
 
   /*
@@ -580,12 +582,12 @@ export function DesktopLibraryPage({
           }
         >
           <div className="layout-no-offset flex min-w-0 flex-col">
-            <BackButton className="fixed left-5 top-24 z-[80] lg:left-8" />
-
             <div className="full-bleed relative flow-root">
               <TitleHero
                 key={data.library.Id}
                 item={data.library}
+                backTo={data.library.Type === "Movie" ? "/movies" : "/shows"}
+                onWatchedSlot={setWatchedSlot}
                 isRevealed={isInitialDetailsReady}
                 onShowDetails={() =>
                   seriesDetailsRef.current?.scrollIntoView({
@@ -603,6 +605,8 @@ export function DesktopLibraryPage({
               <SeriesLibraryDetails
                 initialItem={data.library}
                 variant="desktop"
+                watchedSlot={watchedSlot}
+                watchedSlotLook="dock"
                 canonicalPath={canonicalPath}
                 onInitialReady={() => setReadyDetailsId(activeId ?? null)}
               />

@@ -1,11 +1,13 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import type { MediaItem } from "../../lib/types";
 import { heroPlayState, heroRoundCount, heroRowParts } from "./HeroActions";
+import { DOCK_ASIDE_GAP_PX } from "./HeroCopy";
 import {
   COPY_ROWS,
   HERO_HEIGHT_CLASS,
+  TITLE_BACK_TOP_PX,
   heroLayout,
   heroDock,
   queueSlots,
@@ -56,8 +58,14 @@ export function HomeHeroSkeletonPieces({
   item,
   smartContinueItems = [],
   canDownload = false,
+  titleKind,
 }: {
   stage: StageSize;
+  /**
+   * A title page's: its back button, and its watched button over the dock
+   * (wide) or under the menu at the right (tall).
+   */
+  titleKind?: "movie" | "show";
   /** A title's own page has the same copy and no queue. */
   withQueue?: boolean;
   /** The pill over the queue, which a single featured title does without. */
@@ -136,7 +144,33 @@ export function HomeHeroSkeletonPieces({
             </span>
           ))}
         </div>
+        {titleKind && layout.form === "wide" ? (
+          <TitleBarPlaceholder
+            kind={titleKind}
+            // Placed from inside the dock's 1px border.
+            style={{
+              right: -1,
+              bottom: `calc(100% + ${DOCK_ASIDE_GAP_PX + 1}px)`,
+            }}
+          />
+        ) : null}
       </div>
+      {titleKind ? (
+        <>
+          <div
+            className="hero-dock-bar absolute"
+            style={{ left: layout.copy.left, top: TITLE_BACK_TOP_PX }}
+          >
+            <div className="shimmer h-9 w-[74px] rounded-full" />
+          </div>
+          {layout.form === "tall" ? (
+            <TitleBarPlaceholder
+              kind={titleKind}
+              style={{ right: layout.copy.left, top: TITLE_BACK_TOP_PX }}
+            />
+          ) : null}
+        </>
+      ) : null}
 
       {withQueue ? (
         <>
@@ -181,6 +215,24 @@ export function HomeHeroSkeletonPieces({
   );
 }
 
+/** A title page's watched button on the dock's glass, as wide as its label. */
+function TitleBarPlaceholder({
+  kind,
+  style,
+}: {
+  kind: "movie" | "show";
+  style: CSSProperties;
+}) {
+  return (
+    <div className="hero-dock-bar absolute" style={style}>
+      <div
+        className="shimmer h-9 rounded-full"
+        style={{ width: kind === "show" ? 228 : 170 }}
+      />
+    </div>
+  );
+}
+
 /** The hero-sized loading section, used while the page has no data yet. */
 export function HomeHeroSkeleton({ fit = "screen" }: { fit?: HeroFit }) {
   const ref = useRef<HTMLElement>(null);
@@ -216,10 +268,13 @@ export function TitleHeroSkeleton({
   fit = "screen",
   item,
   canDownload = false,
+  kind,
 }: {
   fit?: HeroFit;
   /** The title, once the page has it and is waiting on the rest. */
   item?: MediaItem;
+  /** A film's page or a show's, for the back and watched placeholders. */
+  kind: "movie" | "show";
   /** Before the title is known: a film this browser can keep offline. */
   canDownload?: boolean;
 }) {
@@ -257,6 +312,7 @@ export function TitleHeroSkeleton({
               : []
           }
           canDownload={canDownload}
+          titleKind={kind}
         />
       ) : null}
     </section>

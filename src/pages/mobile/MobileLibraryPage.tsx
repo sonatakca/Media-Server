@@ -371,7 +371,7 @@ export function MobileLibraryPage({
   // Sorting and filtering move cards rather than reshuffling them in place.
   const gridRef = useRef<HTMLDivElement | null>(null);
   const titleDetailsRef = useRef<HTMLDivElement | null>(null);
-  // Where a phone's title hero takes the details' watched button.
+  // Where the title hero takes the details' watched button.
   const [watchedSlot, setWatchedSlot] = useState<HTMLSpanElement | null>(null);
   useFlipLayout(gridRef, filteredItems.map((item) => item.Id).join("|"));
 
@@ -536,15 +536,7 @@ export function MobileLibraryPage({
                   }
                 />
               ) : null
-            ) : (
-              <BackButton
-                fallbackTo={
-                  data.library.Type === "Movie" ? "/movies" : "/shows"
-                }
-                label=""
-                className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
-              />
-            )}
+            ) : null}
 
             {/* A phone, and a tablet held upright, have the phone's title
                 hero: the whole backdrop, the copy beneath it. A tablet on its
@@ -564,6 +556,8 @@ export function MobileLibraryPage({
                 <TitleHero
                   key={data.library.Id}
                   item={data.library}
+                  backTo={data.library.Type === "Movie" ? "/movies" : "/shows"}
+                  onWatchedSlot={setWatchedSlot}
                   fit="mobile"
                   trailers={false}
                   isRevealed={isInitialDetailsReady}
@@ -579,7 +573,8 @@ export function MobileLibraryPage({
               <SeriesLibraryDetails
                 initialItem={data.library}
                 variant="mobile"
-                watchedSlot={isPhone ? watchedSlot : undefined}
+                watchedSlot={watchedSlot}
+                watchedSlotLook={isPhone ? "phone" : "dock"}
                 canonicalPath={canonicalPath}
                 onInitialReady={() => setReadyDetailsId(activeId ?? null)}
               />

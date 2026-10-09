@@ -22,18 +22,44 @@
   display: grid;
   gap: var(--dock-gap);
   padding: var(--dock-pad);
-  isolation: isolate;
-  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: calc(var(--dock-play) / 2 + var(--dock-pad))
     calc(var(--dock-play) / 2 + var(--dock-pad))
     calc(var(--dock-row) / 2 + var(--dock-pad))
     calc(var(--dock-row) / 2 + var(--dock-pad));
+}
+/* The dock's glass, which a title page's back button and its bar of lesser
+   actions (watched, the trailer's controls) share. */
+.hero-dock,
+.hero-dock-bar {
+  isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(11, 12, 14, 0.76);
   backdrop-filter: blur(22px) saturate(1.3);
   -webkit-backdrop-filter: blur(22px) saturate(1.3);
   box-shadow:
     0 18px 44px -14px rgba(0, 0, 0, 0.75),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.hero-dock-bar {
+  --dock-row: 36px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 999px;
+}
+/* Nothing to hold yet (the watched button arrives with the details). */
+.hero-dock-bar[data-hide-empty]:not(:has(button)) {
+  display: none;
+}
+.hero-dock-bar .hero-dock-action {
+  width: auto;
+  gap: 6px;
+  padding: 0 14px;
+}
+.hero-dock-bar .hero-dock-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent);
 }
 .hero-dock:has(> .hero-dock-restart) {
   --dock-gap: 4px;

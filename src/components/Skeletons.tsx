@@ -607,28 +607,17 @@ function MobileDetailsSkeleton({
   const isPhone = useIsPhoneView();
   return (
     <div className="layout-no-offset min-w-0 pb-7">
-      {/* The page's own furniture, where the page puts it, over the title
-          hero's skeleton at the hero's own height. */}
-      {isPhone ? (
-        <HeroBackButtonPlaceholder />
-      ) : (
-        <div className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]">
-          <div className="shimmer h-12 w-12 rounded-full" />
-        </div>
-      )}
-      {/* A phone's watched button is in the hero's action row. */}
-      {isPhone ? null : (
-        <div
-          className="shimmer fixed right-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80] h-10 rounded-full"
-          style={{ width: kind === "show" ? 252 : 187 }}
-        />
-      )}
+      {/* A phone's back button is pinned over its hero, and its watched
+          button sits in the hero's action row; the wider title hero's
+          skeleton holds both itself, as the hero does. */}
+      {isPhone ? <HeroBackButtonPlaceholder /> : null}
       <div className="full-bleed relative">
         {isPhone ? (
           <PhoneTitleHeroSkeleton kind={kind} item={item} />
         ) : (
           <TitleHeroSkeleton
             fit="mobile"
+            kind={kind}
             item={item}
             canDownload={kind === "movie" && isOfflineSupported()}
           />
@@ -662,16 +651,9 @@ function HeroLibrarySkeleton({
 
   return (
     <div className="layout-no-offset min-w-0 pb-7">
-      {/* The page's own furniture, where the page puts it. */}
-      <div className="fixed left-5 top-24 z-[80] lg:left-8">
-        <BackButtonSkeleton />
-      </div>
-      <div
-        className="shimmer fixed right-5 top-24 z-[80] h-10 rounded-full lg:right-8"
-        style={{ width: kind === "show" ? 294 : 218 }}
-      />
       <div className="full-bleed relative flow-root">
         <TitleHeroSkeleton
+          kind={kind}
           item={item}
           canDownload={kind === "movie" && isOfflineSupported()}
         />

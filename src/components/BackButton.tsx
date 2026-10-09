@@ -18,8 +18,10 @@ interface BackButtonProps {
    * "hero" stands on artwork: a darker, solid surface with a hairline edge
    * that reads on a bright picture, and no shadow (in a hero only the logo
    * casts one).
+   *
+   * "dock" wears the hero dock's glass, with the dock's own action inside.
    */
-  variant?: "glass" | "hero";
+  variant?: "glass" | "hero" | "dock";
 }
 
 const HERO_SURFACE =
@@ -127,6 +129,23 @@ export function BackButton({
 
     navigate(fallbackTo, { replace: true });
   };
+
+  if (variant === "dock") {
+    return (
+      <span style={style} className={`hero-dock-bar ${className}`}>
+        <button
+          type="button"
+          onClick={handleClick}
+          style={buttonStyle}
+          className={`hero-dock-action ${buttonClassName}`}
+          aria-label={hasLabel ? trimmedLabel : fallbackLabel}
+        >
+          <ChevronLeft size={16} strokeWidth={2.4} />
+          {hasLabel ? <span>{trimmedLabel}</span> : null}
+        </button>
+      </span>
+    );
+  }
 
   return (
     <span

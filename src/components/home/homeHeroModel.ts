@@ -628,3 +628,6 @@ export function tallFootGradient(
  * height and a margin under it.
  */
 export const LOGO_MENU_CLEARANCE_PX = 112;
+
+/** A title page's back button: under the menu, on the copy's left edge. */
+export const TITLE_BACK_TOP_PX = 88;

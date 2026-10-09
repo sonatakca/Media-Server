@@ -1,6 +1,8 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
+  useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
@@ -71,11 +73,18 @@ export function HeroCopyBlock({
   smartContinueItems,
   titleSize,
   withQueue = true,
+  dockAside,
 }: {
   stage: StageSize;
   layout: HeroLayout;
   /** False on a title's own page: no queue, so the dock stands at the right. */
   withQueue?: boolean;
+  /**
+   * A bar over the dock, flush with its right edge (a title page's watched
+   * button and trailer controls). It keeps its place while the dock is away
+   * for the trailer.
+   */
+  dockAside?: ReactNode;
   /** The title the copy describes; null while it is between titles. */
   item: MediaItem | null;
   /**
@@ -96,6 +105,21 @@ export function HeroCopyBlock({
 }) {
   const overviewId = useId();
   const dock = heroDock(stage, { withQueue });
+  // The dock is taller with "start over"; the bar over it follows its real
+  // height, and keeps the last one while the dock is gone.
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  const [dockHeight, setDockHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const node = dockRef.current;
+    if (!node || !dockAside) return undefined;
+    const measure = () => {
+      if (node.offsetHeight > 0) setDockHeight(node.offsetHeight);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [dockAside, layout.form]);
   const [copyWidth, setCopyWidth] = useState<number | null>(null);
   const title = titleSize ?? layout.title;
   const titleScale = isOverviewOpen
@@ -175,6 +199,7 @@ export function HeroCopyBlock({
       </div>
       {layout.form === "wide" ? (
         <div
+          ref={dockRef}
           className="absolute z-[6]"
           style={{ left: dock.left, bottom: dock.bottom, width: dock.width }}
         >
@@ -195,9 +220,24 @@ export function HeroCopyBlock({
           </AnimatePresence>
         </div>
       ) : null}
+      {layout.form === "wide" && dockAside ? (
+        <div
+          className="absolute z-[6]"
+          style={{
+            right: stage.width - dock.left - dock.width,
+            bottom:
+              dock.bottom + (dockHeight ?? dock.height) + DOCK_ASIDE_GAP_PX,
+          }}
+        >
+          {dockAside}
+        </div>
+      ) : null}
     </>
   );
 }
+
+/** Between the dock and the bar over it. */
+export const DOCK_ASIDE_GAP_PX = 10;
 
 export function HeroControlButton({
   label,

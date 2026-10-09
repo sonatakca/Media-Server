@@ -21,14 +21,15 @@ import {
 } from "../hero/heroModel";
 import { HeroComposition, createCompositionMotion } from "./HeroComposition";
 import { NavbarVeil } from "./NavbarVeil";
+import { BackButton } from "../BackButton";
 import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
 import type { DrawnSize } from "./useReportedSize";
 import {
   HERO_HEIGHT_CLASS,
   HERO_MOTION,
   HERO_TRAILER_DELAY_MS,
+  TITLE_BACK_TOP_PX,
   TITLE_SCALE,
-  heroDock,
   heroLayout,
   queueSlots,
   stagePlacement,
@@ -49,8 +50,14 @@ export function TitleHero({
   isRevealed = true,
   fit = "screen",
   trailers = true,
+  backTo,
+  onWatchedSlot,
 }: {
   item: MediaItem;
+  /** Where the back button goes with no history to return through. */
+  backTo?: string;
+  /** Receives the place, beside the dock, for the page's watched button. */
+  onWatchedSlot?: (slot: HTMLSpanElement | null) => void;
   /** The screen, or (phone and tablet) the screen above the tab bar. */
   fit?: HeroFit;
   /** Whether the title's trailer may start once its artwork has had a moment. */
@@ -97,7 +104,6 @@ export function TitleHero({
     return () => observer.disconnect();
   }, []);
   const layout = stage ? heroLayout(stage, { withQueue: false }) : null;
-  const dock = stage ? heroDock(stage, { withQueue: false }) : null;
   const titleScale = layout?.titleScale ?? TITLE_SCALE;
   const slotScale =
     stage && layout ? queueSlots(stage)[0]!.width / stage.width : 0.12;
@@ -230,6 +236,43 @@ export function TitleHero({
   const endTrailer = useCallback(() => setIsTrailerPlaying(false), []);
   const copyItem = isArtworkReady && !isTrailerPlaying ? item : null;
 
+  const sideBar = (
+    <motion.div
+      className="hero-dock-bar text-white"
+      data-hide-empty
+      initial={{ opacity: 0 }}
+      animate={{ opacity: isArtworkReady ? 1 : 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.5, ease: "easeOut" }}
+    >
+      {onWatchedSlot ? <span ref={onWatchedSlot} className="contents" /> : null}
+      {trailerUrl ? (
+        <HeroControlButton
+          label={
+            areTrailersEnabled
+              ? t("hero.disableTrailers")
+              : t("hero.enableTrailers")
+          }
+          onClick={() => {
+            const next = !areTrailersEnabled;
+            saveHeroTrailersEnabledPreference(next);
+            setAreTrailersEnabled(next);
+            if (!next) setIsTrailerPlaying(false);
+          }}
+        >
+          {areTrailersEnabled ? <Video size={16} /> : <VideoOff size={16} />}
+        </HeroControlButton>
+      ) : null}
+      {trailerUrl && isTrailerPlaying ? (
+        <HeroControlButton
+          label={isTrailerMuted ? t("player.unmute") : t("player.mute")}
+          onClick={() => setIsTrailerMuted((current) => !current)}
+        >
+          {isTrailerMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        </HeroControlButton>
+      ) : null}
+    </motion.div>
+  );
+
   // --------------------------------------------------------------- render
   return (
     <section
@@ -281,51 +324,28 @@ export function TitleHero({
           reduceMotion={reduceMotion}
           smartContinueItems={smartContinueItems}
           withQueue={false}
+          dockAside={sideBar}
         />
       ) : null}
 
-      {/* With nothing queued, the pill holds only the trailer's controls:
-          over the dock where it stands at the right, else level with the
-          actions there. */}
-      {layout && stage && dock && trailerUrl ? (
-        <motion.div
-          className="absolute z-[6] flex items-center gap-1 rounded-full border border-white/[0.14] bg-black/60 p-1 text-white shadow-[0_18px_60px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl"
-          style={
-            layout.form === "wide"
-              ? {
-                  right: stage.width - dock.left - dock.width,
-                  bottom: dock.bottom + dock.height + 12,
-                }
-              : { right: layout.copy.left, bottom: layout.copy.bottom + 1 }
-          }
-          initial={{ opacity: 0 }}
-          animate={{ opacity: isArtworkReady ? 1 : 0 }}
-          transition={{ duration: reduceMotion ? 0 : 0.5, ease: "easeOut" }}
+      {backTo && layout ? (
+        <BackButton
+          variant="dock"
+          fallbackTo={backTo}
+          className="absolute z-[6]"
+          style={{ left: layout.copy.left, top: TITLE_BACK_TOP_PX }}
+        />
+      ) : null}
+
+      {/* The title's lesser actions, on the dock's glass: over the dock
+          where it stands at the right, else under the menu at the right. */}
+      {layout && layout.form === "tall" ? (
+        <div
+          className="absolute z-[6]"
+          style={{ right: layout.copy.left, top: TITLE_BACK_TOP_PX }}
         >
-          <HeroControlButton
-            label={
-              areTrailersEnabled
-                ? t("hero.disableTrailers")
-                : t("hero.enableTrailers")
-            }
-            onClick={() => {
-              const next = !areTrailersEnabled;
-              saveHeroTrailersEnabledPreference(next);
-              setAreTrailersEnabled(next);
-              if (!next) setIsTrailerPlaying(false);
-            }}
-          >
-            {areTrailersEnabled ? <Video size={16} /> : <VideoOff size={16} />}
-          </HeroControlButton>
-          {isTrailerPlaying ? (
-            <HeroControlButton
-              label={isTrailerMuted ? t("player.unmute") : t("player.mute")}
-              onClick={() => setIsTrailerMuted((current) => !current)}
-            >
-              {isTrailerMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-            </HeroControlButton>
-          ) : null}
-        </motion.div>
+          {sideBar}
+        </div>
       ) : null}
     </section>
   );
