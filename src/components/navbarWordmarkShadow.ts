@@ -1,13 +1,16 @@
+import { contrastRatio } from "../lib/logoShadow";
+
 /**
- * The navbar wordmark's shadow, baked into its frames.
+ * The navbar wordmark's shadow, baked into images under its frames.
  *
  * It used to be a CSS `filter: drop-shadow()` on the element holding the six
  * colour frames. On a real iPad the loading cycle's frame swaps repaint that
  * element, and iOS WebKit redrew the filter clipped to the element's own
  * 88x36 box: a dark rectangle with straight edges, starkest on Amber, whose
- * letters run to every edge of its canvas. So the shadow is now drawn into
- * each frame by `scripts/bake-navbar-wordmark.ts`, on a canvas padded by its
- * full reach, and the page shows plain images with no filter at all.
+ * letters run to every edge of its canvas. So each frame's shadow is drawn
+ * by `scripts/bake-navbar-wordmark.ts`, on a canvas padded by its full
+ * reach, and the page shows plain images with no filter at all: the shadow
+ * under the letters, faded by how much the artwork behind them needs it.
  */
 
 /** The size of the plain frames, in their own pixels. */
@@ -77,4 +80,30 @@ export function getWordmarkShadowFrameStyle() {
     width: pct((w + pad.left + pad.right) / w),
     height: pct((h + pad.top + pad.bottom) / h),
   };
+}
+
+/**
+ * How much of its shadow the wordmark needs, 0–1, over artwork of these
+ * luminances (one per sampled point behind it), for letters of luminance
+ * `letters`. Over anything as dark as the letters or darker, all of it: the
+ * halo is what separates them. Over artwork lighter than the letters it
+ * fades as the two pull apart, gone by a contrast of 3:1: dark letters on a
+ * bright sky read by themselves, and a black halo under them only smears
+ * their edge. Averaged over the points, so a mixed backdrop gets some.
+ */
+export function wordmarkShadowStrength(
+  letters: number,
+  backdrop: readonly number[],
+): number {
+  if (backdrop.length === 0) return 1;
+  let total = 0;
+  for (const luminance of backdrop) {
+    if (luminance <= letters) {
+      total += 1;
+      continue;
+    }
+    const ratio = contrastRatio(letters, luminance);
+    total += Math.min(1, Math.max(0, (3 - ratio) / 1.5));
+  }
+  return total / backdrop.length;
 }

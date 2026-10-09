@@ -1,13 +1,15 @@
 /**
- * Bakes the navbar wordmark's shadow into its six colour frames.
+ * Bakes the navbar wordmark's shadow for each of its six colour frames.
  *
- * Reads the plain frames in `src/assets/navbar-wordmark/` and writes shadowed
- * ones, on a canvas padded by the shadow's reach, to
- * `src/assets/navbar-wordmark/shadowed/`. The shadow is the CSS filter the
- * wordmark used to carry, computed the way a browser does it: each
- * drop-shadow blurs the alpha of everything drawn so far (a Gaussian, its
- * deviation fitted to WebKit's), offsets it, tints it black, and draws the
- * input over it. See `src/components/navbarWordmarkShadow.ts` for why.
+ * Reads the plain frames in `src/assets/navbar-wordmark/` and writes each
+ * one's shadow alone, black, on a canvas padded by its reach, to
+ * `src/assets/navbar-wordmark/shadow/`. Drawn under its plain frame it gives
+ * exactly the shadowed wordmark; the page fades it by how much the artwork
+ * behind needs it. The shadow is the CSS filter the wordmark used to carry,
+ * computed the way a browser does it: each drop-shadow blurs the alpha of
+ * everything drawn so far (a Gaussian, its deviation fitted to WebKit's),
+ * offsets it, tints it black, and draws the input over it. See
+ * `src/components/navbarWordmarkShadow.ts` for why.
  *
  *   npx tsx scripts/bake-navbar-wordmark.ts
  *
@@ -27,7 +29,7 @@ import {
 
 const FRAMES = ["warm-red", "amber", "gold", "olive", "green", "teal"];
 const SOURCE_DIR = path.resolve("src/assets/navbar-wordmark");
-const OUT_DIR = path.join(SOURCE_DIR, "shadowed");
+const OUT_DIR = path.join(SOURCE_DIR, "shadow");
 
 function gaussianKernel(sigma: number): Float32Array {
   const radius = Math.ceil(sigma * 3);
@@ -87,25 +89,19 @@ async function bake(name: string) {
     throw new Error(`${name}.webp is ${info.width}x${info.height}`);
   }
 
-  // Premultiplied colour and alpha, 0..1, on the padded canvas.
-  const r = new Float32Array(w * h);
-  const g = new Float32Array(w * h);
-  const b = new Float32Array(w * h);
+  // The letters' alpha, 0..1, on the padded canvas.
   let a = new Float32Array(w * h);
   for (let y = 0; y < info.height; y++) {
     for (let x = 0; x < info.width; x++) {
       const s = (y * info.width + x) * 4;
       const d = (y + pad.top) * w + (x + pad.left);
-      const alpha = data[s + 3] / 255;
-      r[d] = (data[s] / 255) * alpha;
-      g[d] = (data[s + 1] / 255) * alpha;
-      b[d] = (data[s + 2] / 255) * alpha;
-      a[d] = alpha;
+      a[d] = data[s + 3] / 255;
     }
   }
 
-  // Each shadow is black, so it only adds coverage: the colour stays as it
-  // was, and the alpha becomes input + (1 - input) * shadow.
+  const letters = a;
+  // Each shadow is black, so it only adds coverage: the alpha becomes
+  // input + (1 - input) * shadow.
   for (const shadow of WORDMARK_SHADOWS) {
     const sigma =
       shadow.blur * WORDMARK_SHADOW_SIGMA_PER_BLUR * WORDMARK_SHADOW_SCALE;
@@ -123,15 +119,14 @@ async function bake(name: string) {
     a = next;
   }
 
+  // The shadow alone: what, drawn under the letters, makes that alpha.
+  // letters + (1 - letters) * shadow = all, solved for shadow; under an
+  // opaque letter it is never seen.
   const out = Buffer.alloc(w * h * 4);
   for (let i = 0; i < w * h; i++) {
-    const alpha = a[i];
-    const un = (v: number) =>
-      alpha > 0 ? Math.round(Math.min(1, v / alpha) * 255) : 0;
-    out[i * 4] = un(r[i]);
-    out[i * 4 + 1] = un(g[i]);
-    out[i * 4 + 2] = un(b[i]);
-    out[i * 4 + 3] = Math.round(alpha * 255);
+    const cover = 1 - letters[i];
+    const shadow = cover > 1e-3 ? (a[i] - letters[i]) / cover : 0;
+    out[i * 4 + 3] = Math.round(Math.min(1, Math.max(0, shadow)) * 255);
   }
 
   const file = path.join(OUT_DIR, `${name}.webp`);

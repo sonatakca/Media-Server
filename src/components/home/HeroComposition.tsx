@@ -15,7 +15,8 @@ import { useCroppedTransparentImage } from "../../hooks/useCroppedTransparentIma
 import type { MediaItem } from "../../lib/types";
 import type { SampleRegion } from "../../lib/logoShadow";
 import { getStageImageCandidates } from "../hero/heroModel";
-import { useLogoShadow } from "./logoShadowStyle";
+import { sampleUrl, useLogoShadow } from "./logoShadowStyle";
+import { useRegisterNavbarBackdrop } from "../../lib/navbarBackdrop";
 import { useBakedLogoShadows } from "./useBakedLogoShadows";
 import {
   measureWords,
@@ -166,6 +167,7 @@ export function HeroComposition({
     onTitleSize,
     measureWords,
   );
+  const frameRef = useRef<HTMLDivElement>(null);
 
   const form = heroForm(stage);
   const artwork = getStageImageCandidates(item, form, stage.width).find(
@@ -177,6 +179,25 @@ export function HeroComposition({
    * printed title away and the logo comes up in its place.
    */
   const isPoster = artwork?.type === "poster";
+  // On stage the artwork is what the navbar stands on. Its box is the stage
+  // itself, where the frame comes to rest, so a lift still under way does
+  // not skew where the navbar's wordmark falls on it.
+  const artworkUrl = artwork?.url;
+  const navbarBackdrop = useMemo(
+    () =>
+      isStage && artworkUrl
+        ? {
+            url: sampleUrl(artworkUrl),
+            getBox: () =>
+              (
+                frameRef.current?.parentElement ?? document.body
+              ).getBoundingClientRect(),
+            position: { x: 0.5, y: isPoster ? 0 : 0.5 },
+          }
+        : null,
+    [isStage, artworkUrl, isPoster],
+  );
+  useRegisterNavbarBackdrop(navbarBackdrop);
   const fallbackLogoUrl = item.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
     : "";
@@ -279,6 +300,7 @@ export function HeroComposition({
 
   return (
     <motion.div
+      ref={frameRef}
       className="absolute left-0 top-0 overflow-hidden bg-[#050607]"
       style={{
         width: stage.width,

@@ -35,6 +35,7 @@ import { getHeroPreviewUrl } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
 import type { DrawnSize } from "./useReportedSize";
+import { NavbarVeil } from "./NavbarVeil";
 import { useSmartContinueItems } from "./useSmartContinueItems";
 import {
   getHeroImageCandidates,
@@ -975,6 +976,7 @@ export function HomeHero({
         }
       }}
     >
+      <NavbarVeil />
       {stage
         ? layers.map((layer) => {
             const item = itemsById.get(layer.id);

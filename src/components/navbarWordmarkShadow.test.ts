@@ -4,7 +4,9 @@ import {
   WORDMARK_FRAME_WIDTH,
   getWordmarkShadowFrameStyle,
   getWordmarkShadowPad,
+  wordmarkShadowStrength,
 } from "./navbarWordmarkShadow";
+import { relativeLuminance } from "../lib/logoShadow";
 
 const percent = (value: string) => Number.parseFloat(value) / 100;
 
@@ -37,5 +39,33 @@ describe("navbar wordmark shadow frames", () => {
     expect(
       top + (height * (pad.top + WORDMARK_FRAME_HEIGHT)) / bakedHeight,
     ).toBeCloseTo(1, 5);
+  });
+});
+
+describe("how much shadow the wordmark needs", () => {
+  const teal = relativeLuminance(0x33, 0x7b, 0x6c);
+  const gold = relativeLuminance(0xd3, 0xca, 0x22);
+  const sky = relativeLuminance(222, 230, 238);
+  const night = relativeLuminance(20, 24, 30);
+
+  it("drops it for dark letters on a bright sky", () => {
+    expect(wordmarkShadowStrength(teal, [sky, sky, sky])).toBe(0);
+  });
+
+  it("keeps all of it for light letters on the same sky", () => {
+    expect(wordmarkShadowStrength(gold, [sky, sky])).toBe(1);
+  });
+
+  it("keeps all of it over anything as dark as the letters", () => {
+    expect(wordmarkShadowStrength(teal, [night, night])).toBe(1);
+    expect(wordmarkShadowStrength(gold, [night])).toBe(1);
+  });
+
+  it("gives a mixed backdrop a share", () => {
+    expect(wordmarkShadowStrength(teal, [sky, night])).toBe(0.5);
+  });
+
+  it("keeps all of it when nothing was measured", () => {
+    expect(wordmarkShadowStrength(teal, [])).toBe(1);
   });
 });

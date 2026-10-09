@@ -51,7 +51,7 @@ export function MobileNavbar() {
           aria-label={t("nav.brandHome")}
           className="flex h-10 min-w-0 flex-1 items-center pr-2"
         >
-          <NavbarWordmark className="h-9" />
+          <NavbarWordmark className="h-9" overArtwork={!showHeaderSurface} />
         </Link>
 
         {/* Over artwork the icons carry the wordmark's soft shadow, so a
@@ -59,9 +59,7 @@ export function MobileNavbar() {
             group: a filter there would anchor the menus' fixed panels. */}
         <div
           className={`flex shrink-0 items-center gap-1 ${
-            showHeaderSurface
-              ? ""
-              : "[&_svg]:[filter:var(--filter-navbar-ink)]"
+            showHeaderSurface ? "" : "[&_svg]:[filter:var(--filter-navbar-ink)]"
           }`}
         >
           <AppUpdateButton variant="mobile" />

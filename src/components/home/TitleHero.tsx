@@ -20,6 +20,7 @@ import {
   saveHeroTrailersEnabledPreference,
 } from "../hero/heroModel";
 import { HeroComposition, createCompositionMotion } from "./HeroComposition";
+import { NavbarVeil } from "./NavbarVeil";
 import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
 import type { DrawnSize } from "./useReportedSize";
 import {
@@ -233,6 +234,7 @@ export function TitleHero({
       ref={sectionRef}
       className={`seyirlik-hero-stage relative mx-4 mt-2 mb-4 w-[calc(100%-2rem)] rounded-2xl overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
     >
+      <NavbarVeil />
       {stage && layout ? (
         <HeroComposition
           item={item}

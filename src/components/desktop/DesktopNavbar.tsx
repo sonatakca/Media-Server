@@ -101,7 +101,10 @@ export function DesktopNavbar() {
           aria-label={t("nav.brandHome")}
         >
           <span className="flex h-10 shrink-0 items-center sm:h-12">
-            <NavbarWordmark className="h-8 sm:h-11" />
+            <NavbarWordmark
+              className="h-8 sm:h-11"
+              overArtwork={!hasScrolled}
+            />
           </span>
         </Link>
 
