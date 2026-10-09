@@ -141,6 +141,14 @@ describe("SeriesLibraryDetails", () => {
       screen.getByRole("button", { name: "Scroll Similar left" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Cast and crew")).toBeInTheDocument();
+    // Similar titles close the page, after the title's own cast and facts.
+    expect(
+      screen
+        .getByRole("heading", { name: "Information" })
+        .compareDocumentPosition(
+          screen.getByRole("heading", { name: "Similar" }),
+        ),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByText("About")).toBeInTheDocument();
     expect(screen.getByText("Movie overview")).toBeInTheDocument();
     // A person credited twice is one card with both credits.

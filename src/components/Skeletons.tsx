@@ -628,9 +628,9 @@ function MobileDetailsSkeleton({
       ) : (
         <MobileTrailerShelfSkeleton />
       )}
-      <MobileSimilarShelfSkeleton />
       <MobileCastSkeleton />
       <MobileAboutInformationSkeleton kind={kind} />
+      <MobileSimilarShelfSkeleton />
     </div>
   );
 }

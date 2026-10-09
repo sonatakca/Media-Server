@@ -802,30 +802,6 @@ export function SeriesLibraryDetails({
 
       {isDesktop ? trailerShelf : null}
 
-      {similarItems.length > 0 ? (
-        <MediaShelf title={labels.similar} variant={variant}>
-          {similarItems.map((item, index) => (
-            <div key={item.Id} className="snap-start">
-              {isDesktop ? (
-                <MediaCard
-                  item={item}
-                  to={getRouteForItem(item)}
-                  variant="poster"
-                  index={index}
-                  animateIn
-                />
-              ) : (
-                <MobileMediaCard
-                  item={item}
-                  to={getRouteForItem(item)}
-                  variant="poster"
-                />
-              )}
-            </div>
-          ))}
-        </MediaShelf>
-      ) : null}
-
       {cast.length > 0 ? (
         <MediaShelf title={labels.cast} variant={variant}>
           {cast.map((person) => (
@@ -944,6 +920,34 @@ export function SeriesLibraryDetails({
           </dl>
         </div>
       </MotionReveal>
+
+      {/* Other titles come last, once this one has been told in full; the
+          gap above matches the one between the last shelf and "About". */}
+      {similarItems.length > 0 ? (
+        <div className={isDesktop ? "mt-6" : "mt-4"}>
+          <MediaShelf title={labels.similar} variant={variant}>
+            {similarItems.map((item, index) => (
+              <div key={item.Id} className="snap-start">
+                {isDesktop ? (
+                  <MediaCard
+                    item={item}
+                    to={getRouteForItem(item)}
+                    variant="poster"
+                    index={index}
+                    animateIn
+                  />
+                ) : (
+                  <MobileMediaCard
+                    item={item}
+                    to={getRouteForItem(item)}
+                    variant="poster"
+                  />
+                )}
+              </div>
+            ))}
+          </MediaShelf>
+        </div>
+      ) : null}
     </div>
   );
 }
