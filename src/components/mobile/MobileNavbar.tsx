@@ -57,7 +57,7 @@ export function MobileNavbar() {
           className={`flex shrink-0 items-center gap-1 ${
             showHeaderSurface
               ? ""
-              : "[&_svg]:[filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.6))_drop-shadow(0_3px_14px_rgba(0,0,0,0.5))]"
+              : "[&_svg]:[filter:var(--filter-navbar-ink)]"
           }`}
         >
           <AppUpdateButton variant="mobile" />

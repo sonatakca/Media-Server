@@ -230,7 +230,7 @@ export function HeroActions({
           className={`${action} hero-dock-restart`}
         >
           <RotateCcw size={16} />
-          <span>{t("details.startOverShort")}</span>
+          <span>{t("details.restartWatching")}</span>
         </Link>
       ) : null}
       <div className="hero-dock-row">

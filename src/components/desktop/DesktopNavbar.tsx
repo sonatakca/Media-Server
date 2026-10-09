@@ -111,7 +111,7 @@ export function DesktopNavbar() {
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `text-sm font-semibold transition-colors duration-200 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.6))_drop-shadow(0_3px_14px_rgba(0,0,0,0.5))] ${
+                `text-sm font-semibold transition-colors duration-200 navbar-ink-shadow ${
                   isActive ? "text-white" : "text-white/72 hover:text-white"
                 } ${"className" in link ? link.className : ""}`
               }
@@ -136,7 +136,7 @@ export function DesktopNavbar() {
             measureKey={location.pathname}
           >
             {/* The links' shadow too, so the line keeps its edge where they do. */}
-            <span className="absolute -bottom-2 left-1/2 h-[2px] w-[calc(100%+0.25rem)] -translate-x-1/2 rounded-full bg-white/90 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.6))_drop-shadow(0_3px_14px_rgba(0,0,0,0.5))]" />
+            <span className="absolute -bottom-2 left-1/2 h-[2px] w-[calc(100%+0.25rem)] -translate-x-1/2 rounded-full bg-white/90 navbar-ink-shadow" />
           </SlidingIndicator>
         </div>
 
@@ -153,7 +153,7 @@ export function DesktopNavbar() {
               aria-label={t("search.open")}
               className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
             >
-              <Search size={18} className="shrink-0" />
+              <Search size={18} className="navbar-ink-shadow shrink-0" />
             </button>
           </Tooltip>
 

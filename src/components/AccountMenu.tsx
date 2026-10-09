@@ -131,9 +131,12 @@ export function AccountMenu({
             : "inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
         }
       >
-        <UserRound size={isDesktop ? 17 : 18} className="shrink-0" />
+        <UserRound
+          size={isDesktop ? 17 : 18}
+          className="navbar-ink-shadow shrink-0"
+        />
         {isDesktop ? (
-          <span className="hidden min-w-0 truncate lg:inline">
+          <span className="navbar-ink-shadow hidden min-w-0 truncate lg:inline">
             {session.username}
           </span>
         ) : null}

@@ -15,11 +15,8 @@ import { useCroppedTransparentImage } from "../../hooks/useCroppedTransparentIma
 import type { MediaItem } from "../../lib/types";
 import type { SampleRegion } from "../../lib/logoShadow";
 import { getStageImageCandidates } from "../hero/heroModel";
-import {
-  stageLogoFilter,
-  stageLogoReach,
-  useLogoShadow,
-} from "./logoShadowStyle";
+import { useLogoShadow } from "./logoShadowStyle";
+import { useBakedLogoShadows } from "./useBakedLogoShadows";
 import {
   QUEUE_TITLE_BOX,
   TITLE_SCALE,
@@ -72,10 +69,6 @@ export function createCompositionMotion(
     trailer: motionValue(0),
   };
 }
-
-/** The logo's shadow in a miniature, as it appears on screen. */
-const QUEUE_SHADOW_BLUR_PX = 5;
-const QUEUE_SHADOW_DROP_PX = 2;
 
 const QUEUE_LOGO_REGION: SampleRegion = {
   left: QUEUE_TITLE_BOX.left,
@@ -238,16 +231,13 @@ export function HeroComposition({
     };
   }, [stage, titleBox, titleRestScale]);
   const stageShadow = useLogoShadow(logoUrl, artwork?.url, stageLogoRegion);
-  const logoFilter = useTransform(toStage, (p) =>
-    stageLogoFilter(stageShadow, p),
+  const baked = useBakedLogoShadows(
+    logoUrl,
+    titleBox.width,
+    logoMaxHeight,
+    slotScale * queueMove.scale,
   );
-  const logoReach = stageLogoReach(stageShadow);
-  const onScreen = slotScale * queueMove.scale;
-  // Both filters go on frames padded by their reach, never on the images:
-  // iOS WebKit can clip a filtered element to its own box (see
-  // getLogoShadowFrameStyle). A blur fades out within 1.5× its radius.
-  const silhouetteBlur = QUEUE_SHADOW_BLUR_PX / onScreen;
-  const silhouetteReach = Math.ceil(1.5 * silhouetteBlur);
+  const haloOpacity = useTransform(toStage, (p) => stageShadow.strength * p);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -348,46 +338,62 @@ export function HeroComposition({
             }`}
           >
             <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0"
-              style={{ opacity: shadow.strength }}
+              className="relative"
+              style={{
+                width: baked.aspect
+                  ? `min(100%, ${logoMaxHeight * baked.aspect}px)`
+                  : "100%",
+              }}
             >
+              {baked.queue ? (
+                <motion.div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0"
+                  style={{ opacity: silhouetteOpacity }}
+                >
+                  <img
+                    src={baked.queue.url}
+                    alt=""
+                    draggable={false}
+                    className="absolute"
+                    style={{ ...baked.queue.style, opacity: shadow.strength }}
+                  />
+                </motion.div>
+              ) : null}
               <motion.div
-                className="absolute"
-                style={{
-                  inset: -silhouetteReach,
-                  padding: silhouetteReach,
-                  opacity: silhouetteOpacity,
-                  y: QUEUE_SHADOW_DROP_PX / onScreen,
-                  filter: `brightness(0) blur(${silhouetteBlur}px)`,
-                }}
+                className="relative"
+                style={{ opacity: logoPresence }}
               >
+                {baked.base ? (
+                  <img
+                    src={baked.base.url}
+                    alt=""
+                    aria-hidden="true"
+                    draggable={false}
+                    className="pointer-events-none absolute"
+                    style={baked.base.style}
+                  />
+                ) : null}
+                {baked.halo ? (
+                  <motion.img
+                    src={baked.halo.url}
+                    alt=""
+                    aria-hidden="true"
+                    draggable={false}
+                    className="pointer-events-none absolute"
+                    style={{ ...baked.halo.style, opacity: haloOpacity }}
+                  />
+                ) : null}
                 <img
                   src={logoUrl}
-                  alt=""
+                  alt={isStage ? title : ""}
                   draggable={false}
-                  className="h-full w-full select-none object-contain object-left-bottom"
+                  onLoad={() => setIsLogoLoaded(true)}
+                  className="relative block h-auto w-full select-none object-contain object-left-bottom"
+                  style={{ maxHeight: logoMaxHeight }}
                 />
               </motion.div>
             </div>
-            <motion.div
-              className="relative"
-              style={{
-                padding: logoReach,
-                margin: -logoReach,
-                filter: logoFilter,
-                opacity: logoPresence,
-              }}
-            >
-              <img
-                src={logoUrl}
-                alt={isStage ? title : ""}
-                draggable={false}
-                onLoad={() => setIsLogoLoaded(true)}
-                className="block h-auto w-full select-none object-contain object-left-bottom"
-                style={{ maxHeight: logoMaxHeight }}
-              />
-            </motion.div>
           </div>
         ) : (
           <motion.h2

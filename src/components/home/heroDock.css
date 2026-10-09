@@ -206,3 +206,10 @@
     min-height: 20rem;
   }
 }
+
+/* The dedicated restart row reads as a second playback choice. */
+.hero-dock > .hero-dock-restart,
+.hero-dock > .hero-dock-restart .hero-dock-action {
+  font-size: 16px;
+  font-weight: 800;
+}

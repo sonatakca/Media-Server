@@ -12,7 +12,7 @@ vi.mock("../../i18n/LanguageContext", () => ({
         "myList.title": "My List",
         "details.overview": "Overview",
         "details.playFromBeginning": "Play from beginning",
-        "details.startOverShort": "Start over",
+        "details.restartWatching": "Watch from the Beginning",
       })[key] ?? key,
   }),
 }));
@@ -82,7 +82,7 @@ describe("hero dock", () => {
   it("labels restart while keeping the explicit start=0 destination", () => {
     dock();
     const restart = screen.getByRole("link", { name: "Play from beginning" });
-    expect(restart).toHaveTextContent("Start over");
+    expect(restart).toHaveTextContent("Watch from the Beginning");
     expect(restart).toHaveAttribute("href", "/watch/film?start=0");
   });
 });

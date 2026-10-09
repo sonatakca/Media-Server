@@ -357,7 +357,7 @@ export function PhoneTitleHero({
                             size={PHONE_TITLE_ACTION_ICON}
                             strokeWidth={2}
                           />
-                          <span>{t("details.startOverShort")}</span>
+                          <span>{t("details.restartWatching")}</span>
                         </Link>
                       </span>
                     ) : null}

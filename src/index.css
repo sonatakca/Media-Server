@@ -141,6 +141,10 @@
   --shadow-navbar-glass:
     0 18px 56px rgba(0, 0, 0, 0.34), 0 1px 0 rgba(255, 255, 255, 0.055),
     inset 0 -1px 0 rgba(255, 255, 255, 0.055);
+  --filter-navbar-ink:
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.75))
+    drop-shadow(0 1px 6px rgba(0, 0, 0, 0.5))
+    drop-shadow(0 2px 16px rgba(0, 0, 0, 0.35));
   --shadow-artwork-glow:
     0 34px 120px rgba(0, 0, 0, 0.68), 0 12px 36px rgba(0, 0, 0, 0.48),
     0 0 54px color-mix(in srgb, var(--accent) 14%, transparent);
@@ -290,6 +294,14 @@ img {
 
 .shadow-navbar-glass {
   box-shadow: var(--shadow-navbar-glass);
+}
+
+/* What the navbar draws stands on: over a hero the bar is clear, and the
+   artwork behind it can be as light as the ink. A filter, never a
+   text-shadow or box-shadow, so it follows the glyphs and icons and draws
+   after any clip their animation frames make. Black only. */
+.navbar-ink-shadow {
+  filter: var(--filter-navbar-ink);
 }
 
 .shadow-artwork-glow {

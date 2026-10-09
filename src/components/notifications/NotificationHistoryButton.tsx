@@ -42,7 +42,7 @@ export function NotificationHistoryButton() {
         onClick={() => setOpen((value) => !value)}
         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/75 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
       >
-        <Bell size={18} />
+        <Bell size={18} className="navbar-ink-shadow" />
       </button>
       {open
         ? createPortal(

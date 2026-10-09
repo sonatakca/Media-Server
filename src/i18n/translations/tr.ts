@@ -1284,6 +1284,7 @@ export const tr = {
   "common.type": "Tür",
   "details.continueWatching": "Devam Et",
   "details.playFromBeginning": "Baştan İzle",
+  "details.restartWatching": "İzlemeye Baştan Başla",
   "details.startOverShort": "Baştan",
   "details.playTitleFromBeginning": "{title} baştan izle",
   "details.remainingTime": "Kalan süre",

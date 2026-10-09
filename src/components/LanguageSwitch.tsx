@@ -41,7 +41,7 @@ export function LanguageSwitch() {
       >
         <span className="grid w-[54px] items-center justify-center gap-2">
           <span
-            className={`fi ${displayFlagClass} block h-[18px] w-[25px] shrink-0 rounded-sm shadow-sm transition-[opacity,transform] duration-200 ease-out ${
+            className={`fi ${displayFlagClass} navbar-ink-shadow block h-[18px] w-[25px] shrink-0 rounded-sm transition-[opacity,transform] duration-200 ease-out ${
               isFlagVisible
                 ? "translate-y-0 opacity-100"
                 : "-translate-y-0.5 opacity-0"

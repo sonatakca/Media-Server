@@ -1288,6 +1288,7 @@ export const en = {
   "common.type": "Type",
   "details.continueWatching": "Continue",
   "details.playFromBeginning": "Play from beginning",
+  "details.restartWatching": "Watch from the Beginning",
   "details.startOverShort": "Start over",
   "details.playTitleFromBeginning": "Play {title} from beginning",
   "details.remainingTime": "Remaining time",
