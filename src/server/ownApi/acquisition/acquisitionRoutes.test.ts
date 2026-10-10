@@ -910,6 +910,24 @@ describe("live progress", () => {
     expect(payload?.data?.speedBytesPerSecond).toBeUndefined();
     const [entry] = payload?.data?.progress as Array<Record<string, unknown>>;
     expect(entry!.speedBytesPerSecond).toBeUndefined();
+    expect(entry!.etaSeconds).toBeUndefined();
+    expect(entry!.stage).toBe("paused");
+  });
+
+  it("reports queued downloads as paused without pausing history post-processing", async () => {
+    const h = harness([waiting, unpacking], { sab: live(true) });
+    const { payload } = await invoke(route(h, "GET", path));
+    const entries = payload?.data?.progress as Array<Record<string, unknown>>;
+    expect(entries[0]).toMatchObject({
+      acquisitionId: waiting.id,
+      stage: "paused",
+      downloadedBytes: 0,
+    });
+    expect(entries[1]).toMatchObject({
+      acquisitionId: unpacking.id,
+      stage: "processing",
+      detail: "Unpacking: 3/7",
+    });
   });
 
   it("reports an unreachable SABnzbd as a fact, not an error", async () => {

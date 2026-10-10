@@ -340,6 +340,59 @@ describe("the acquisitions page", () => {
     ).toBeTruthy();
   });
 
+  it.each(["queued", "downloading"] as const)(
+    "shows a globally paused %s job as paused rather than moving or waiting in line",
+    async (stage) => {
+      api.listAcquisitions.mockResolvedValue([acquisition({ state: stage })]);
+      api.getDownloadProgress.mockResolvedValue({
+        reachable: true,
+        paused: true,
+        progress: [
+          {
+            acquisitionId: "a1",
+            stage,
+            percent: 0,
+            totalBytes: 26_600_000_000,
+            downloadedBytes: 0,
+            queuePosition: 1,
+            speedBytesPerSecond: 31_000_000,
+            etaSeconds: 425,
+          },
+        ],
+      });
+      renderPage();
+      expect(
+        await screen.findByText("admin.acquisitions.progress.paused"),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText(/admin\.acquisitions\.progress\.queued/),
+      ).toBeNull();
+      expect(screen.queryByText(/31\.0 MB\/s/)).toBeNull();
+    },
+  );
+
+  it("keeps showing post-processing when only the download queue is paused", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "processing" }),
+    ]);
+    api.getDownloadProgress.mockResolvedValue({
+      reachable: true,
+      paused: true,
+      progress: [
+        {
+          acquisitionId: "a1",
+          stage: "processing",
+          statusText: "Extracting",
+          detail: "Unpacking: 3/7",
+          totalBytes: 20_000_000_000,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText("Extracting — Unpacking: 3/7")).toBeTruthy();
+    expect(screen.queryByText("admin.acquisitions.progress.paused")).toBeNull();
+  });
+
   it("names the post-processing step once the bytes are down", async () => {
     api.listAcquisitions.mockResolvedValue([
       acquisition({ state: "processing" }),

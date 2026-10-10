@@ -149,11 +149,19 @@ function progressOf(
   acquisitionId: string,
   job: SabJob,
   speedBytesPerSecond: number | undefined,
+  queuePaused: boolean,
 ): ProgressDto {
+  // A queue-wide pause stops waiting and downloading jobs, while history
+  // post-processing can still run. SABnzbd leaves slot statuses unchanged.
+  const paused =
+    job.state === "paused" ||
+    (queuePaused &&
+      job.source === "queue" &&
+      (job.state === "queued" || job.state === "downloading"));
   const stage: ProgressDto["stage"] =
     job.state === "completed" || job.state === "failed"
       ? "done"
-      : job.state === "paused"
+      : paused
         ? "paused"
         : job.state === "queued"
           ? "queued"
@@ -329,6 +337,7 @@ export function createAcquisitionRoutes({
               record.id,
               job,
               job === moving ? queue.speedBytesPerSecond : undefined,
+              queue.paused,
             ),
           );
         }

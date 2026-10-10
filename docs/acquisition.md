@@ -121,6 +121,14 @@ row: SABnzbd is one process on one machine, and asking it per acquisition turns
 a backlog into a stampede. When SABnzbd is unreachable it changes nothing at
 all, rather than recording an absence as a failure.
 
+## Live progress and pauses
+
+The live progress endpoint reads SABnzbd’s queue-wide pause as well as each
+job’s status. A globally paused queue reports waiting and downloading jobs as
+paused, without a speed or ETA; post-processing already in history continues
+to report its actual step. Submission does not resume the downloader: an
+operator’s pause must remain effective until they choose to resume it.
+
 ## What is recorded
 
 Three tables. `acquisitions` is the row and its current state.
