@@ -131,7 +131,13 @@ function releaseOf(summary: AcquisitionSummary) {
 /** One running acquisition, as SABnzbd currently sees it. */
 interface ProgressDto {
   readonly acquisitionId: string;
-  readonly stage: "queued" | "paused" | "downloading" | "processing" | "done";
+  readonly stage:
+    | "queued"
+    | "paused"
+    | "downloading"
+    | "processing"
+    | "done"
+    | "failed";
   /** SABnzbd's own word: "Downloading", "Repairing", "Extracting"… */
   readonly statusText?: string;
   readonly percent?: number;
@@ -149,17 +155,27 @@ function progressOf(
   acquisitionId: string,
   job: SabJob,
   speedBytesPerSecond: number | undefined,
+  queuePaused: boolean,
 ): ProgressDto {
+  // A queue-wide pause stops waiting and downloading jobs, while history
+  // post-processing can still run. SABnzbd leaves slot statuses unchanged.
+  const paused =
+    job.state === "paused" ||
+    (queuePaused &&
+      job.source === "queue" &&
+      (job.state === "queued" || job.state === "downloading"));
   const stage: ProgressDto["stage"] =
-    job.state === "completed" || job.state === "failed"
+    job.state === "completed"
       ? "done"
-      : job.state === "paused"
-        ? "paused"
-        : job.state === "queued"
-          ? "queued"
-          : job.state === "processing"
-            ? "processing"
-            : "downloading";
+      : job.state === "failed"
+        ? "failed"
+        : paused
+          ? "paused"
+          : job.state === "queued"
+            ? "queued"
+            : job.state === "processing"
+              ? "processing"
+              : "downloading";
   const total = job.sizeBytes;
   const downloaded =
     total === undefined
@@ -329,6 +345,7 @@ export function createAcquisitionRoutes({
               record.id,
               job,
               job === moving ? queue.speedBytesPerSecond : undefined,
+              queue.paused,
             ),
           );
         }

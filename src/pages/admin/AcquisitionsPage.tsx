@@ -93,6 +93,15 @@ function DownloadProgressLine({
     );
   }
   if (!entry) return null;
+  // History can report failure before the acquisition worker reconciles it.
+  // A terminal job is not necessarily a successful download.
+  if (entry.stage === "failed") {
+    return (
+      <p className="mt-3 text-xs font-semibold text-amber-200/80">
+        {t("admin.acquisitions.state.failed")}
+      </p>
+    );
+  }
 
   const total = entry.totalBytes;
   const downloaded =
@@ -104,25 +113,28 @@ function DownloadProgressLine({
       ? 100
       : (entry.percent ?? 0);
 
-  const status =
-    entry.stage === "queued"
+  const paused =
+    entry.stage === "paused" ||
+    (live.paused &&
+      (entry.stage === "queued" || entry.stage === "downloading"));
+  const status = paused
+    ? t("admin.acquisitions.progress.paused")
+    : entry.stage === "queued"
       ? `${t("admin.acquisitions.progress.queued")}${
           entry.queuePosition
             ? ` · ${t("admin.acquisitions.progress.position")} ${entry.queuePosition}`
             : ""
         }`
-      : entry.stage === "paused" || live.paused
-        ? t("admin.acquisitions.progress.paused")
-        : entry.stage === "processing"
-          ? [entry.statusText, entry.detail].filter(Boolean).join(" — ")
-          : [
-              entry.speedBytesPerSecond
-                ? formatSpeed(entry.speedBytesPerSecond)
-                : null,
-              entry.etaSeconds ? etaText(entry.etaSeconds, t) : null,
-            ]
-              .filter(Boolean)
-              .join(" · ");
+      : entry.stage === "processing"
+        ? [entry.statusText, entry.detail].filter(Boolean).join(" — ")
+        : [
+            entry.speedBytesPerSecond
+              ? formatSpeed(entry.speedBytesPerSecond)
+              : null,
+            entry.etaSeconds ? etaText(entry.etaSeconds, t) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
 
   return (
     <div className="mt-3">
@@ -136,9 +148,7 @@ function DownloadProgressLine({
       >
         <div
           className={`h-full rounded-full transition-[width] duration-700 ease-out motion-reduce:transition-none ${
-            entry.stage === "paused" || live.paused
-              ? "bg-white/35"
-              : "bg-[var(--accent)]"
+            paused ? "bg-white/35" : "bg-[var(--accent)]"
           }`}
           style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
         />
@@ -305,7 +315,9 @@ export function AcquisitionsPage() {
         const next = await getDownloadProgress();
         if (isCancelled) return;
         setLive(next);
-        const finished = next.progress.some((entry) => entry.stage === "done");
+        const finished = next.progress.some(
+          (entry) => entry.stage === "done" || entry.stage === "failed",
+        );
         if (finished || polls % LIST_EVERY_POLLS === 0) {
           const rows = await listAcquisitions();
           if (!isCancelled) setAcquisitions(rows);
