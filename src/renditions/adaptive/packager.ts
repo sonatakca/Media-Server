@@ -1377,10 +1377,20 @@ export async function packageAdaptiveRendition(
      * what stopped a nearly finished title from resuming on a full-ish drive.
      */
     const drive = await driveSpaceProvider();
+    /*
+     * An assembled package that never earned its verified marker is removed
+     * just below, before re-assembly, so its bytes are coming back too. Not
+     * counting them demanded room for a copy about to be freed, and a restart
+     * during validation could not resume a finished encode.
+     */
+    const replaceablePackageBytes = verifiedScratchPackage
+      ? 0
+      : await checkpointBytes(workVersionRoot);
     const conservativeBytes = Math.max(
       0,
       Math.ceil(estimate.totalBytes * (1 + DEFAULT_STORAGE_SAFETY_MARGIN) * 2) -
-        inheritedBytes,
+        inheritedBytes -
+        replaceablePackageBytes,
     );
     if (drive.freeBytes - conservativeBytes < reserveBytes) {
       return {
