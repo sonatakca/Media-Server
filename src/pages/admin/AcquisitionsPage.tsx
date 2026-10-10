@@ -93,6 +93,15 @@ function DownloadProgressLine({
     );
   }
   if (!entry) return null;
+  // History can report failure before the acquisition worker reconciles it.
+  // A terminal job is not necessarily a successful download.
+  if (entry.stage === "failed") {
+    return (
+      <p className="mt-3 text-xs font-semibold text-amber-200/80">
+        {t("admin.acquisitions.state.failed")}
+      </p>
+    );
+  }
 
   const total = entry.totalBytes;
   const downloaded =
@@ -306,7 +315,9 @@ export function AcquisitionsPage() {
         const next = await getDownloadProgress();
         if (isCancelled) return;
         setLive(next);
-        const finished = next.progress.some((entry) => entry.stage === "done");
+        const finished = next.progress.some(
+          (entry) => entry.stage === "done" || entry.stage === "failed",
+        );
         if (finished || polls % LIST_EVERY_POLLS === 0) {
           const rows = await listAcquisitions();
           if (!isCancelled) setAcquisitions(rows);

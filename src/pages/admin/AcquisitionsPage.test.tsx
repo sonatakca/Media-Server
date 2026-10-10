@@ -415,6 +415,31 @@ describe("the acquisitions page", () => {
     expect(screen.getByText(/20\.0 GB \/ 20\.0 GB · 100%/)).toBeTruthy();
   });
 
+  it("does not show failed zero-byte history as a complete download before reconciliation", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "submitting" }),
+    ]);
+    api.getDownloadProgress.mockResolvedValue({
+      reachable: true,
+      paused: false,
+      progress: [
+        {
+          acquisitionId: "a1",
+          stage: "failed",
+          statusText: "Failed",
+          totalBytes: 0,
+        },
+      ],
+    });
+    renderPage();
+    expect(
+      await screen.findByText("admin.acquisitions.state.failed"),
+    ).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByText(/0 MB \/ 0 MB|100%/)).toBeNull();
+    await waitFor(() => expect(api.listAcquisitions).toHaveBeenCalledTimes(2));
+  });
+
   it("says plainly when the download client is not answering", async () => {
     api.getDownloadProgress.mockResolvedValue({
       reachable: false,

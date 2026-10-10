@@ -161,7 +161,13 @@ export function removeBlocklistEntry(id: string): Promise<unknown> {
 /** One running download, as the download client sees it right now. */
 export interface AcquisitionProgress {
   readonly acquisitionId: string;
-  readonly stage: "queued" | "paused" | "downloading" | "processing" | "done";
+  readonly stage:
+    | "queued"
+    | "paused"
+    | "downloading"
+    | "processing"
+    | "done"
+    | "failed";
   /** The download client's own word: "Downloading", "Repairing"… */
   readonly statusText?: string;
   readonly percent?: number;

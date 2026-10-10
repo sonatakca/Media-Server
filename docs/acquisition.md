@@ -129,6 +129,10 @@ paused, without a speed or ETA; post-processing already in history continues
 to report its actual step. Submission does not resume the downloader: an
 operator’s pause must remain effective until they choose to resume it.
 
+History failures have a distinct `failed` progress stage. The page shows the
+failure immediately and refreshes the acquisition list, even before worker
+reconciliation. A failed job never fills a success bar or displays `0 / 0 · 100%`.
+
 ## What is recorded
 
 Three tables. `acquisitions` is the row and its current state.

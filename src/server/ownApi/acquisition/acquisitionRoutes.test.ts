@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createAcquisitionRoutes } from "./acquisitionRoutes";
 import { ACQUISITION_JOB_TYPES } from "./acquisitionJobs";
 import { SabError } from "./sabnzbd";
-import type { SabnzbdClient } from "./sabnzbd";
+import type { SabJob, SabnzbdClient } from "./sabnzbd";
 import type {
   AcquisitionRepository,
   AcquisitionSummary,
@@ -849,7 +849,7 @@ describe("live progress", () => {
           },
         ],
       })),
-      listHistory: vi.fn(async () => [
+      listHistory: vi.fn(async (): Promise<SabJob[]> => [
         {
           nzoId: "nzo-3",
           name: unpacking.idempotencyKey,
@@ -912,6 +912,35 @@ describe("live progress", () => {
     expect(entry!.speedBytesPerSecond).toBeUndefined();
     expect(entry!.etaSeconds).toBeUndefined();
     expect(entry!.stage).toBe("paused");
+  });
+
+  it("reports a failed zero-byte history job as failed, never successfully done", async () => {
+    const sab = live();
+    sab.listHistory.mockResolvedValue([
+      {
+        nzoId: "nzo-1",
+        name: downloading.idempotencyKey,
+        state: "failed",
+        statusText: "Failed",
+        sizeBytes: 0,
+        source: "history",
+      },
+    ]);
+    sab.queueSnapshot.mockResolvedValue({
+      paused: false,
+      speedBytesPerSecond: 0,
+      jobs: [],
+    });
+    const h = harness([downloading], { sab });
+    const { payload } = await invoke(route(h, "GET", path));
+    expect(payload?.data?.progress).toEqual([
+      {
+        acquisitionId: downloading.id,
+        stage: "failed",
+        statusText: "Failed",
+        totalBytes: 0,
+      },
+    ]);
   });
 
   it("reports queued downloads as paused without pausing history post-processing", async () => {
