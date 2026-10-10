@@ -1207,6 +1207,11 @@ body:has(.seyirlik-reader-shell) {
   flex-direction: column;
 }
 
+/* Kept while another tab is shown (ReaderPanels), out of sight. */
+.rd-search[hidden] {
+  display: none;
+}
+
 .rd-search-field {
   display: flex;
   align-items: center;
@@ -1331,6 +1336,16 @@ body:has(.seyirlik-reader-shell) {
 
 .rd-search-hit .rd-bookmark-excerpt {
   -webkit-line-clamp: 4;
+}
+
+/* The words a passage was found by, in the reader's mark colour, as they are
+   marked on the page: never a highlighter's wash, which is the reader's own. */
+.rd-search-hit .rd-bookmark-excerpt mark {
+  padding: 0.04em 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--rd-mark) 16%, transparent);
+  color: var(--rd-mark);
+  font-weight: 650;
 }
 
 .rd-list[aria-busy] {

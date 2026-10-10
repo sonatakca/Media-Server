@@ -124,8 +124,9 @@ import {
   type ReadingSession,
   type BookPosition,
 } from "../lib/bookPositionApi";
-import type { BookSearchHit } from "../lib/bookSearchApi";
+import type { BookSearchFound, BookSearchHit } from "../lib/bookSearchApi";
 import { epubBlockText } from "../lib/epubBlocks";
+import { findOnPage, markFoundWords } from "./reader/searchMarks";
 import { shimmerPassage } from "./reader/searchShimmer";
 import {
   ReadingLight,
@@ -613,9 +614,9 @@ export function BookReaderPage() {
   const lightRef = useRef<ReadingLight | null>(null);
   const scheduleFrameRef = useRef<() => void>(() => undefined);
   /** Opens the book at a search hit; set while a book is open. */
-  const showPassageRef = useRef<(hit: BookSearchHit) => Promise<void>>(
-    async () => undefined,
-  );
+  const showPassageRef = useRef<
+    (hit: BookSearchHit, found: BookSearchFound) => Promise<void>
+  >(async () => undefined);
   const measureColumnRef = useRef<() => void>(() => undefined);
   const markerRef = useRef<HTMLDivElement | null>(null);
   // The margin mounts after the frame that charted the chapter, so a new
@@ -1719,6 +1720,7 @@ export function BookReaderPage() {
       };
     };
 
+    /** Takes away what showing a search hit put on the page. */
     let putOutShimmer = () => undefined as void;
 
     /** The book fading out and back, so a jump never shows where it passed. */
@@ -1738,16 +1740,17 @@ export function BookReaderPage() {
     };
 
     /**
-     * Opens the book at a search hit: its section, then the block it starts
-     * in, its first line on the reading line, where the light falls, and the
-     * reader's colour runs through the passage once so the eye
-     * finds it (searchShimmer.ts).
+     * Opens the book at a search hit: its section, then the words it was
+     * found by, their line on the reading line, where the light falls (a hit
+     * found by meaning alone, its first line). The found words stay marked,
+     * and the reader's colour runs through the passage from their block once
+     * so the eye finds it (searchMarks.ts, searchShimmer.ts).
      *
      * The server counted the blocks the way this page does, but the page is
      * the one that knows, so the block must hold the passage's opening words;
      * if it does not, the section's first block that does is used instead.
      */
-    showPassageRef.current = async (hit) => {
+    showPassageRef.current = async (hit, found) => {
       await book.opened;
       const href = (book.spine.get(hit.section) as Section | null)?.href;
       if (!href || !isMounted) {
@@ -1788,35 +1791,15 @@ export function BookReaderPage() {
       }
       const holds = (index: number) =>
         epubBlockText(blocks[index]?.textContent ?? "").includes(hit.anchor);
-      const found = holds(hit.block)
+      const start = holds(hit.block)
         ? hit.block
         : blocks.findIndex((_, index) => holds(index));
-      const block = found >= 0 ? found : Math.min(hit.block, blocks.length - 1);
-      // The passage's first line centred on the reading line, so the light
-      // falls on the passage itself.
-      const lineHeight = blocks[block]
-        ? Number.parseFloat(getComputedStyle(blocks[block]).lineHeight)
-        : Number.NaN;
-      const place = {
-        section: hit.section,
-        block,
-        offset: -Math.round(
-          scroller.clientHeight * READING_LINE -
-            (Number.isFinite(lineHeight) ? lineHeight / 2 : 0),
-        ),
-      };
-
-      backToPlace(place);
-      await waitForLayoutToSettle(host);
-      backToPlace(place);
-      scheduleFrame();
-      if (!rendered) {
+      const block = start >= 0 ? start : Math.min(hit.block, blocks.length - 1);
+      if (!blocks[block]) {
         setJumping(false);
-        await veilTo(1, 240);
+        await veilTo(1, 220);
         veil?.cancel();
-        if (!isMounted) {
-          return;
-        }
+        return;
       }
 
       // The passage's blocks: its text is theirs, one per line, in order.
@@ -1830,19 +1813,64 @@ export function BookReaderPage() {
           break;
         passage.push(next);
       }
+      const onPage = findOnPage(passage, hit.text, found);
+      const focusBlock = onPage.focus?.block ?? 0;
+
+      // The found words' line (or the passage's first) centred on the
+      // reading line, so the light falls on them. Measured each time it is
+      // set: sections loading around it can still move it.
+      const placeNow = () => {
+        const target = passage[focusBlock]!;
+        const top = target.getBoundingClientRect().top;
+        let middle: number;
+        const words = onPage.focus?.range.getClientRects()[0];
+        if (words) {
+          middle = words.top + words.height / 2 - top;
+        } else {
+          const lineHeight = Number.parseFloat(
+            getComputedStyle(target).lineHeight,
+          );
+          middle = Number.isFinite(lineHeight) ? lineHeight / 2 : 0;
+        }
+        return {
+          section: hit.section,
+          block: block + focusBlock,
+          offset: Math.round(middle - scroller.clientHeight * READING_LINE),
+        };
+      };
+
+      backToPlace(placeNow());
+      await waitForLayoutToSettle(host);
+      backToPlace(placeNow());
+      scheduleFrame();
+      if (!rendered) {
+        setJumping(false);
+        await veilTo(1, 240);
+        veil?.cancel();
+        if (!isMounted) {
+          return;
+        }
+      }
+
       const frame = passage[0]!.ownerDocument.defaultView?.frameElement;
       if (!frame || !isMounted) {
         return;
       }
       const frameTop = frame.getBoundingClientRect().top;
       const view = scroller.getBoundingClientRect();
+      const palette = themePalettes[settingsRef.current.theme];
       putOutShimmer();
-      putOutShimmer = shimmerPassage(passage, {
-        mark: themePalettes[settingsRef.current.theme].mark,
-        ink: themePalettes[settingsRef.current.theme].ink,
-        scheme: themePalettes[settingsRef.current.theme].scheme,
+      const putOutWords = markFoundWords(onPage.ranges, palette);
+      const putOutColour = shimmerPassage(passage.slice(focusBlock), {
+        mark: palette.mark,
+        ink: palette.ink,
+        scheme: palette.scheme,
         visible: { top: view.top - frameTop, bottom: view.bottom - frameTop },
       });
+      putOutShimmer = () => {
+        putOutWords();
+        putOutColour();
+      };
     };
 
     /**
@@ -2410,10 +2438,13 @@ export function BookReaderPage() {
       .catch(() => undefined);
   }, []);
 
-  const showPassage = useCallback((hit: BookSearchHit) => {
-    setPanel(null);
-    void showPassageRef.current(hit).catch(() => undefined);
-  }, []);
+  const showPassage = useCallback(
+    (hit: BookSearchHit, found: BookSearchFound) => {
+      setPanel(null);
+      void showPassageRef.current(hit, found).catch(() => undefined);
+    },
+    [],
+  );
 
   const spineIndexOf = useCallback((href: string) => {
     const section = bookRef.current?.spine.get(

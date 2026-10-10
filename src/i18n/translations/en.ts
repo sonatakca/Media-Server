@@ -587,9 +587,9 @@ export const en = {
   "reader.bookmarks": "Bookmarks",
   "reader.search": "Search",
   "reader.search.label": "Search this book",
-  "reader.search.placeholder": "Describe a moment in the book",
+  "reader.search.placeholder": "Search for a word, a name or a moment",
   "reader.search.hint":
-    "Describe what happens in your own words — who is there, what they do or feel. Search finds the passage even when the book puts it differently.",
+    "Search for a name, a word or a line from the book — or describe a moment in your own words. Search finds it even when the book puts it differently. Put words in quotes to find them exactly as written.",
   "reader.search.preparing": "Getting this book ready to search",
   "reader.search.preparingDetail":
     "The server prepares every book once, for everyone, and hasn't finished this one yet. It takes a few minutes; keep reading if you like, and search will be ready when you come back.",

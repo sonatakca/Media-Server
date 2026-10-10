@@ -587,9 +587,9 @@ export const tr = {
   "reader.bookmarks": "Yer imleri",
   "reader.search": "Ara",
   "reader.search.label": "Bu kitapta ara",
-  "reader.search.placeholder": "Kitaptaki bir anı anlatın",
+  "reader.search.placeholder": "Bir sözcük, bir ad ya da bir an arayın",
   "reader.search.hint":
-    "Olanı kendi sözlerinizle anlatın: kimler var, ne yapıyor ya da ne hissediyorlar. Kitap başka sözcüklerle anlatsa da arama o bölümü bulur.",
+    "Bir ad, bir sözcük ya da kitaptan bir satır arayın; ya da bir anı kendi sözlerinizle anlatın. Kitap başka sözcüklerle anlatsa da arama onu bulur. Sözcükleri tam yazıldığı gibi bulmak için tırnak içine alın.",
   "reader.search.preparing": "Kitap aramaya hazırlanıyor",
   "reader.search.preparingDetail":
     "Sunucu her kitabı herkes için bir kez hazırlar; bu kitap henüz bitmedi. Birkaç dakika sürer; isterseniz okumaya devam edin, döndüğünüzde arama hazır olacak.",

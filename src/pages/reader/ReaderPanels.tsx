@@ -19,7 +19,7 @@ import type { MediaItem } from "../../lib/types";
 import { BOOK_SANS, BOOK_SERIF } from "./epubTypography";
 import { formatDuration, formatPercent, splitNumber } from "./readerText";
 import { ReaderSearch } from "./ReaderSearch";
-import type { BookSearchHit } from "../../lib/bookSearchApi";
+import type { BookSearchFound, BookSearchHit } from "../../lib/bookSearchApi";
 import {
   FONT_SCALE_STEPS,
   HIGHLIGHT_COLORS,
@@ -700,7 +700,7 @@ export function ReaderContentsDrawer({
   scheme: "dark" | "light";
   spineIndexOf: (href: string) => number | null;
   onNavigate: (target: string) => void;
-  onShowPassage: (hit: BookSearchHit) => void;
+  onShowPassage: (hit: BookSearchHit, found: BookSearchFound) => void;
   onRemoveBookmark: (id: string) => void;
   onClose: () => void;
 }) {
@@ -762,8 +762,12 @@ export function ReaderContentsDrawer({
     }
 
     const drawer = drawerRef.current;
+    // Not the field of a tab kept out of sight.
+    const autofocus = Array.from(
+      drawer?.querySelectorAll<HTMLElement>("[data-autofocus]") ?? [],
+    ).find((element) => !element.closest("[hidden]"));
     const focusTarget =
-      drawer?.querySelector<HTMLElement>("[data-autofocus]") ??
+      autofocus ??
       drawer?.querySelector<HTMLElement>('[aria-current="true"]') ??
       drawer?.querySelector<HTMLElement>("button");
     focusTarget?.focus({ preventScroll: true });
@@ -866,14 +870,16 @@ export function ReaderContentsDrawer({
           </button>
         </div>
 
-        {tab === "search" ? (
-          <ReaderSearch
-            itemId={item.Id}
-            active={open}
-            chapterOf={chapterOf}
-            onShow={onShowPassage}
-          />
-        ) : tab === "contents" ? (
+        {/* Kept while another tab is shown, so a search and its results
+            are still there on the way back. */}
+        <ReaderSearch
+          itemId={item.Id}
+          active={open && tab === "search"}
+          hidden={tab !== "search"}
+          chapterOf={chapterOf}
+          onShow={onShowPassage}
+        />
+        {tab === "search" ? null : tab === "contents" ? (
           rows.length > 0 ? (
             <ol className="rd-list" role="tabpanel">
               {rows.map((row, index) => {
