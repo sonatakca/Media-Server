@@ -587,6 +587,18 @@ export async function runEpochBuild({
   let bytesWritten = 0;
   let videoCodecStrings = new Map<string, string>();
 
+  // Subtitle/audio-only updates have no video epochs to encode or assemble.
+  if (videoOutputs.length === 0) {
+    return {
+      manifests,
+      reconciliation,
+      encodedEpochs,
+      bytesWritten,
+      videoCodecStrings,
+      salvaged,
+    };
+  }
+
   /**
    * One frame of the source, which is the closest two rungs can ever land.
    *

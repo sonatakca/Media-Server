@@ -20,10 +20,14 @@
 
 import { readFile, rm, stat, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { resolvePublishedTitleRoot } from "./publishedRoot";
 import { SEGMENT_TARGET_SECONDS } from "../../lib/playback-planner/gopPolicy";
 import { UNKNOWN_LANGUAGE } from "../processing/languages";
 import type { PauseController } from "../processing/pauseController";
-import type { SidecarSubtitle } from "./sidecarSubtitles";
+import {
+  sidecarSubtitleIsCurrent,
+  type SidecarSubtitle,
+} from "./sidecarSubtitles";
 import type { DriveSpace, RenditionPaths } from "../analysis";
 import { getDriveSpace } from "../analysis";
 import {
@@ -182,6 +186,7 @@ async function titleRenditionPresence(
   titleRoot: string,
   manifest: TitlePackageManifest,
 ): Promise<RenditionPresence> {
+  titleRoot = await resolvePublishedTitleRoot(titleRoot);
   const intact = async (relatives: readonly string[]): Promise<boolean> => {
     for (const relative of relatives) {
       const stats = await stat(
@@ -907,6 +912,20 @@ export async function packageAdaptiveRendition(
     const presence: RenditionPresence = existing
       ? await titleRenditionPresence(existingTitleRoot, existing)
       : { video: new Set(), audio: new Set(), subtitle: new Set() };
+    // A synthetic index is a position in a directory listing, not an identity.
+    // Adding a file can put a different translation at an already published id.
+    const reusableSubtitles = new Set(presence.subtitle);
+    for (const sidecar of sidecarSubtitles) {
+      const id = subtitleRenditionId(sidecar.streamIndex);
+      if (
+        !sidecarSubtitleIsCurrent(
+          sidecar,
+          existing?.subtitle.find((track) => track.id === id),
+        )
+      ) {
+        reusableSubtitles.delete(id);
+      }
+    }
 
     if (verifySourceFingerprint) {
       const { computeSourceFingerprint } = await import("../registry");
@@ -946,7 +965,7 @@ export async function packageAdaptiveRendition(
     const work: PackageWorkPlan = planPackageWork({
       requirements,
       existing,
-      presence,
+      presence: { ...presence, subtitle: reusableSubtitles },
       sourceFingerprint: request.sourceFingerprint,
       profileVersion: ADAPTIVE_PROFILE_VERSION,
       requiredAudioStreamIndexes: audioPlan.outputs.map(
@@ -1015,11 +1034,31 @@ export async function packageAdaptiveRendition(
      */
     const { workVersionRoot, marker: verificationMarker } =
       verifiedPackagePaths(workspaceDirectory, request.sourceFingerprint);
-    const verifiedScratchPackage = await readVerifiedScratchPackage({
+    const scratchCandidate = await readVerifiedScratchPackage({
       marker: verificationMarker,
       workVersionRoot,
       sourceFingerprint: request.sourceFingerprint,
     });
+    // The video fingerprint does not change when a sidecar is corrected while
+    // publication waits. Reuse scratch only if it still covers today's files;
+    // unchanged tracks in an incremental package can live in the current title.
+    const verifiedScratchPackage =
+      scratchCandidate &&
+      sidecarSubtitles.every((sidecar) => {
+        const id = subtitleRenditionId(sidecar.streamIndex);
+        const scratchTrack = scratchCandidate.metadata.subtitleRenditions?.find(
+          (track) => track.id === id,
+        );
+        return sidecarSubtitleIsCurrent(
+          sidecar,
+          scratchTrack ??
+            (reusableSubtitles.has(id)
+              ? existing?.subtitle.find((track) => track.id === id)
+              : undefined),
+        );
+      })
+        ? scratchCandidate
+        : null;
 
     /**
      * Publishes a verified scratch package and finishes the job.
@@ -2366,6 +2405,9 @@ export async function packageAdaptiveRendition(
       subtitleRenditions.push({
         id,
         sourceStreamIndex: sidecar.streamIndex,
+        ...(sidecar.sidecarFingerprint
+          ? { sidecarFingerprint: sidecar.sidecarFingerprint }
+          : {}),
         ...(sidecar.language !== UNKNOWN_LANGUAGE
           ? { language: sidecar.language }
           : {}),
@@ -2386,6 +2428,8 @@ export async function packageAdaptiveRendition(
         videoRenditions,
         audioRenditions,
         subtitleRenditions,
+        allowMissingVideo:
+          work.mode === "incremental" && videoRenditions.length === 0,
         videoCodecStrings,
         audioCodecStrings,
       }),
@@ -2414,6 +2458,7 @@ export async function packageAdaptiveRendition(
       },
       segmentTargetSeconds: segmentSeconds,
       switchingSetDurationSeconds: Math.max(
+        ...(videoRenditions.length === 0 ? [probe.durationSeconds] : []),
         ...videoRenditions.map((rendition) => rendition.durationSeconds),
       ),
       masterPlaylistPath: ADAPTIVE_MASTER_PLAYLIST,
@@ -2473,6 +2518,8 @@ export async function packageAdaptiveRendition(
       // An incremental run's work directory holds only what it built, which is
       // video alone whenever the published audio is being reused.
       allowMissingAudio: audioRenditions.length === 0,
+      allowMissingVideo:
+        work.mode === "incremental" && videoRenditions.length === 0,
       ...(signal ? { signal } : {}),
     });
 

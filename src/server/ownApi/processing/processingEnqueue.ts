@@ -35,6 +35,10 @@ import {
   type PackageDamage,
 } from "./packageIndex";
 import { missingPackageAssets } from "./packageAssets";
+import { resolvePublishedTitleRoot } from "../../../renditions/adaptive/publishedRoot";
+import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
+import { sidecarSubtitleIsCurrent } from "../../../renditions/adaptive/sidecarSubtitles";
+import { subtitleRenditionId } from "../../../renditions/adaptive/profile";
 
 /**
  * The one way a processing job is created.
@@ -304,7 +308,10 @@ export function createProcessingEnqueuer({
      * subtitle track — cannot be repaired by re-encoding one rung, so it is
      * reported as an incomplete package instead of being quietly excused.
      */
-    const missing = await missingPackageAssets(titleRoot, manifest);
+    const missing = await missingPackageAssets(
+      await resolvePublishedTitleRoot(titleRoot),
+      manifest,
+    );
     const damage: PackageDamage = {
       manifestId: manifestIdentity(manifest),
       rungs: [
@@ -366,6 +373,28 @@ export function createProcessingEnqueuer({
      * only the values above, so asking it twice costs nothing.
      */
     const planned = decideProcessing(plan);
+    const retainedSidecars = await planRetainedSidecarSubtitles(absolutePath);
+    const manifest = existing.present
+      ? await readTitlePackageManifest(titleRoot)
+      : null;
+    const missingSidecars = retainedSidecars.filter(
+      (sidecar) =>
+        !sidecarSubtitleIsCurrent(
+          sidecar,
+          manifest?.subtitle.find(
+            (track) => track.id === subtitleRenditionId(sidecar.streamIndex),
+          ),
+        ),
+    );
+    const missingEmbeddedSubtitles =
+      planned.streams.keptSubtitleStreamIndexes.filter(
+        (index) =>
+          !manifest?.subtitle.some(
+            (track) => track.id === subtitleRenditionId(index),
+          ),
+      );
+    const missingSubtitleCount =
+      missingSidecars.length + missingEmbeddedSubtitles.length;
     const missingRungs = planned.ladder
       .map((rung) => rung.qualityHeight)
       .filter(
@@ -374,7 +403,9 @@ export function createProcessingEnqueuer({
     const isCurrent =
       existing.present &&
       existing.current === true &&
-      missingRungs.length === 0;
+      !existing.damage?.elsewhere &&
+      missingRungs.length === 0 &&
+      missingSubtitleCount === 0;
 
     /*
      * Re-decided once the outstanding work is known, so the estimate and the
@@ -386,7 +417,7 @@ export function createProcessingEnqueuer({
       !isCurrent &&
       existing.present &&
       existing.current === true &&
-      missingRungs.length > 0;
+      !existing.damage?.elsewhere;
     const decision = isCurrent
       ? decideProcessing({ ...plan, alreadyCurrent: true })
       : incremental
@@ -398,6 +429,9 @@ export function createProcessingEnqueuer({
             audioTracksToEncode: 0,
           })
         : planned;
+    if (incremental && missingSubtitleCount > 0 && missingRungs.length === 0) {
+      decision.summary = `Refresh ${missingSubtitleCount} subtitle track(s), reusing the published video and audio.`;
+    }
 
     return {
       decision,

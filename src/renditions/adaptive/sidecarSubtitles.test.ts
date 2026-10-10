@@ -11,6 +11,25 @@ import {
  * subtitles arrive in.
  */
 describe("reading a sidecar subtitle's filename", () => {
+  it.each([
+    "The.Wolf.of.Wall.Street.2013.LAMA-tr-synced.srt",
+    "The.Wolf.of.Wall.Street.2013.LAMA_tr_synced.srt",
+    "The.Wolf.of.Wall.Street.2013.LAMA.tr-TR.synced.srt",
+  ])("recognises Turkish in release-style tags: %s", (fileName) => {
+    expect(
+      parseSidecarSubtitleTags(
+        fileName,
+        "The.Wolf.of.Wall.Street.2013.2160p.UHD.BluRay.x265.10bit.HDR.DDP5.1-LAMA",
+      ),
+    ).toEqual({ language: "tur", isForced: false, isHearingImpaired: false });
+  });
+
+  it("does not mistake a release token for a language", () => {
+    expect(parseSidecarSubtitleTags("Film.HDR.srt", "Film").language).toBe(
+      "und",
+    );
+  });
+
   it("reads the language from the tag after the title", () => {
     expect(
       parseSidecarSubtitleTags(

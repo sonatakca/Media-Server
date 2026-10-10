@@ -9,6 +9,34 @@ a runtime dependency and must not become one.** Nothing here calls it, reads its
 database, or requires it to be running. It is a thing that can be switched off
 once this subsystem has been exercised against real media.
 
+## Source sidecars and packaged subtitles
+
+An installed or hand-added SRT stays beside the source video. Adaptive processing
+converts retained subtitles to `subtitle/turkish.vtt` (with numbered names for
+additional tracks), writes the playlists under `.seyirlik/subtitle/`, and adds
+them to the master playlist. The source SRT is preserved.
+These paths are relative to the active package root. Incremental repairs can
+publish under `.seyirlik-generations/`; `.seyirlik/current.json` selects the
+active generation, so its subtitles need not appear in the original root folder.
+
+Discovery accepts language tags separated by dots, hyphens, underscores or
+spaces, including `LAMA-tr-synced.srt` and `.tur.srt`. Release words such as
+`HDR` or `The` are not languages. English and Turkish are retained by default.
+
+Adding a subtitle after a package was published does not itself run adaptive
+processing. Process the title again from the admin page, or run the following
+from the server checkout with its configured media root:
+
+```powershell
+npm run media:renditions:process -- --profile adaptive --source "Movies/The Wolf of Wall Street (2013)/The.Wolf.of.Wall.Street.2013.2160p.UHD.BluRay.x265.10bit.HDR.DDP5.1-LAMA.mkv"
+```
+
+Analysis detects new or changed sidecars even when the video ladder is complete.
+Processing refreshes subtitles while reusing intact video and audio. Sidecar
+reuse checks a fingerprint of both filename and bytes, so inserting an earlier
+filename cannot reuse another subtitle's synthetic stream index. Packages made
+before these fingerprints were recorded refresh their retained sidecars once.
+
 ## Switched off unless configured
 
 There is one environment variable, `SEYIRLIK_SUBTITLES`, holding JSON:
