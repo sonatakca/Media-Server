@@ -556,8 +556,13 @@ export interface ProcessingOverview {
   jobTitles?: ProcessingJobTitle[];
 }
 
-export function getProcessingOverview(): Promise<ProcessingOverview> {
-  return ownApiClient.request<ProcessingOverview>("/processing/overview");
+export function getProcessingOverview({
+  background = false,
+}: { background?: boolean } = {}): Promise<ProcessingOverview> {
+  return ownApiClient.request<ProcessingOverview>(
+    "/processing/overview",
+    background ? { background } : undefined,
+  );
 }
 
 export function getProcessingHardware(): Promise<HardwareReport> {

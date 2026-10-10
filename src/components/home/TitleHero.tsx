@@ -30,6 +30,7 @@ import {
   HERO_TRAILER_DELAY_MS,
   TITLE_BACK_TOP_PX,
   TITLE_SCALE,
+  heroDock,
   heroLayout,
   queueSlots,
   stagePlacement,
@@ -37,6 +38,7 @@ import {
   type StageSize,
 } from "./homeHeroModel";
 import { useSmartContinueItems } from "./useSmartContinueItems";
+import { useHeroCentreDock } from "./heroCentreDock";
 
 /**
  * A title's own hero, on its film or series page: the home hero's stage with
@@ -73,6 +75,7 @@ export function TitleHero({
 }) {
   const { t } = useLanguage();
   const reduceMotion = Boolean(useReducedMotion());
+  const renderCentreDock = useHeroCentreDock();
   const sectionRef = useRef<HTMLElement | null>(null);
   const [stage, setStage] = useState<StageSize | null>(null);
   const [isArtworkLoaded, setIsArtworkLoaded] = useState(false);
@@ -336,6 +339,30 @@ export function TitleHero({
           style={{ left: layout.copy.left, top: TITLE_BACK_TOP_PX }}
         />
       ) : null}
+
+      {/* A centre dock the page asked for (an administrator's tools), level
+          with the watch dock: its width and its foot, in the stage's middle. */}
+      {renderCentreDock && layout && stage && layout.form === "wide"
+        ? (() => {
+            const dock = heroDock(stage, { withQueue: false });
+            return (
+              <div
+                className="absolute z-[7]"
+                style={{
+                  left: (stage.width - dock.width) / 2,
+                  bottom: dock.bottom,
+                  width: dock.width,
+                }}
+              >
+                {renderCentreDock({
+                  width: dock.width,
+                  compact: dock.compact,
+                  stageHeight: stage.height,
+                })}
+              </div>
+            );
+          })()
+        : null}
 
       {/* The title's lesser actions, on the dock's glass: over the dock
           where it stands at the right, else under the menu at the right. */}

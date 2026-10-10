@@ -10,6 +10,7 @@ import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { useIsPhoneView } from "../../hooks/useIsPhoneView";
 import { TitleHero } from "../../components/home/TitleHero";
+import { useHeroCentreDock } from "../../components/home/heroCentreDock";
 import { PhoneTitleHero } from "../../components/mobile/PhoneTitleHero";
 import { HeroBackButton } from "../../components/mobile/HeroBackButton";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
@@ -239,6 +240,7 @@ export function MobileLibraryPage({
   );
   const [data, setData] = useState<LibraryData | null>(null);
   const isPhone = useIsPhoneView();
+  const renderCentreDock = useHeroCentreDock();
   const [loadingItemType, setLoadingItemType] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -565,6 +567,10 @@ export function MobileLibraryPage({
                 />
               )}
             </div>
+
+            {/* A phone's hero has no stage for a centre dock; it stands
+                under the hero instead. */}
+            {isPhone ? renderCentreDock?.(null) : null}
 
             <div
               ref={titleDetailsRef}
