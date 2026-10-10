@@ -58,7 +58,7 @@ export interface ProcessingEnqueueOptions {
   store: ProcessingJobStore;
   queue: JobQueue;
   mediaRoot: string;
-  renditionRoot: string;
+  workRoot: string;
   ffprobePath: string;
   hardware: () => Promise<HardwareReport>;
   storageGuard: StorageGuard;
@@ -193,7 +193,7 @@ export function createProcessingEnqueuer({
   store,
   queue,
   mediaRoot,
-  renditionRoot,
+  workRoot,
   ffprobePath,
   hardware,
   storageGuard,
@@ -340,7 +340,7 @@ export function createProcessingEnqueuer({
     }
     const probe = await probeMediaFile(absolutePath, ffprobePath);
     const report = await hardware();
-    const freeBytes = await freeBytesOn(renditionRoot);
+    const freeBytes = await freeBytesOn(workRoot);
     const fingerprint = await computeSourceFingerprint(absolutePath, stats);
     const titleRoot = await titleRootFor(itemId, absolutePath);
     const existing = await existingPackage(titleRoot, fingerprint);

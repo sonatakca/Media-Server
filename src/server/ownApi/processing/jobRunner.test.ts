@@ -1,9 +1,12 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RenditionMediaProbe } from "../../../renditions/probe";
 import type { HardwareReport } from "../../../renditions/hardware/detect";
+import { decideProcessing } from "../../../renditions/processing/decide";
+import { checkpointRoot } from "../../../renditions/adaptive/epochs/checkpoints";
+import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
 import { createProcessingJobRunner } from "./jobRunner";
 import type { ProcessingJobRecord, ProcessingJobStore } from "./jobStore";
 import type { PauseController } from "../../../renditions/processing/pauseController";
@@ -374,6 +377,67 @@ describe("processing job runner", () => {
    * Running out of room halfway through leaves a staging directory to clean up
    * by hand, so the shortfall has to stop the job before any encoding starts.
    */
+  it.each([
+    { correctSource: true, owned: true, resumes: true },
+    { correctSource: false, owned: true, resumes: false },
+    { correctSource: true, owned: false, resumes: false },
+  ])(
+    "credits only owned matching scratch: $correctSource/$owned",
+    async ({ correctSource, owned, resumes }) => {
+      const estimate = decideProcessing({
+        probe: probe(),
+        container: "mp4",
+        sizeBytes: input.sizeBytes,
+        hardware,
+      }).estimate;
+      const required =
+        estimate.outputBytes + estimate.stagingBytes + estimate.reserveBytes;
+      const workRoot = (paths as unknown as { stateRoot: string }).stateRoot;
+      const own = path.join(workRoot, "job-1");
+      mkdirSync(own, { recursive: true });
+      writeFileSync(
+        path.join(own, ".seyirlik-job.json"),
+        JSON.stringify({
+          owner: owned ? "seyirlik-processing-job" : "operator",
+          workspaceId: "job-1",
+        }),
+      );
+      const root = checkpointRoot(
+        workRoot,
+        "job-1",
+        ADAPTIVE_PROFILE_VERSION,
+        correctSource ? fake.latest().sourceFingerprint : "x".repeat(64),
+      );
+      mkdirSync(root, { recursive: true });
+      writeFileSync(path.join(root, "retained.m4s"), Buffer.alloc(1024 * 1024));
+      const packageFn = vi.fn(async () => ({
+        mediaId: "file-1",
+        relativePath: input.relativePath,
+        status: "ready" as const,
+        versionDirectory: "version",
+        storageBytes: 1,
+      }));
+      const localRunner = createProcessingJobRunner({
+        store: fake.store,
+        paths,
+        mediaRoot: "/media",
+        detectHardwareFn: vi.fn(async () => hardware) as never,
+        probeFn: vi.fn(async () => probe()) as never,
+        packageFn: packageFn as never,
+        freeBytesFn: vi.fn(async () => required - 512 * 1024) as never,
+      });
+      const outcome = await localRunner.run(input);
+      if (resumes) {
+        expect(packageFn).toHaveBeenCalledOnce();
+        expect(outcome.status).toBe("succeeded");
+      } else {
+        expect(packageFn).not.toHaveBeenCalled();
+        expect(outcome.errorCode).toBe("INSUFFICIENT_DISK_SPACE");
+      }
+      rmSync(own, { recursive: true, force: true });
+    },
+  );
+
   it("stops before encoding when the volume is too full", async () => {
     const packageFn = vi.fn();
     const localRunner = createProcessingJobRunner({

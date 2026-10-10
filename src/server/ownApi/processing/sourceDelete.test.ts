@@ -146,7 +146,7 @@ async function callDelete(
     store: options.store ?? stubStore(null),
     queue: {} as unknown as JobQueue,
     mediaRoot: fixtureData.root,
-    renditionRoot: fixtureData.root,
+    workRoot: fixtureData.root,
     ...(options.storageAvailable
       ? { storageAvailable: options.storageAvailable }
       : {}),

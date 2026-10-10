@@ -63,7 +63,8 @@ export interface ProcessingRoutesOptions {
   store: ProcessingJobStore;
   queue: JobQueue;
   mediaRoot: string;
-  renditionRoot: string;
+  /** Scratch root used by the worker, including its job directories. */
+  workRoot: string;
   ffmpegPath?: string;
   ffprobePath?: string;
   /**
@@ -260,7 +261,7 @@ export function createProcessingRoutes({
   store,
   queue,
   mediaRoot,
-  renditionRoot,
+  workRoot,
   ffmpegPath = process.env.SEYIRLIK_FFMPEG_PATH ?? "ffmpeg",
   ffprobePath = process.env.SEYIRLIK_FFPROBE_PATH ?? "ffprobe",
   storageAvailable = () => true,
@@ -331,7 +332,7 @@ export function createProcessingRoutes({
     store,
     queue,
     mediaRoot: resolvedMediaRoot,
-    renditionRoot,
+    workRoot,
     ffprobePath,
     hardware,
     storageGuard,

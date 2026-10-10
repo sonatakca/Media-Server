@@ -28,6 +28,10 @@ import {
   saveRenditionRegistry,
   upsertRegistrySource,
 } from "../../../renditions/registry";
+import {
+  checkpointBytes,
+  checkpointRoot,
+} from "../../../renditions/adaptive/epochs/checkpoints";
 import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
 import {
   decideProcessing,
@@ -861,7 +865,27 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     // The expensive writes land on scratch; media-root free space is checked
     // separately by the transactional publisher immediately before copying.
     const freeBytes = await freeBytesFn(workRoot);
+    // Credit disk occupancy, never the database's remembered checkpoint count.
+    // Unowned, missing, or unreadable scratch receives no credit. The packager
+    // validates and reuses epochs before encoding and applies the same budget.
+    const inheritedBytes = await verifyOwnedJobWorkspace(
+      workRoot,
+      path.join(workRoot, job.id),
+      job.id,
+    )
+      .then(() =>
+        checkpointBytes(
+          checkpointRoot(
+            workRoot,
+            job.id,
+            ADAPTIVE_PROFILE_VERSION,
+            job.sourceFingerprint,
+          ),
+        ),
+      )
+      .catch(() => 0);
     const decision = decideProcessing({
+      inheritedBytes,
       probe,
       container: path.extname(input.sourcePath).replace(".", ""),
       sizeBytes: input.sizeBytes,

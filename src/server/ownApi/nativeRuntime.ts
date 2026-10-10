@@ -74,7 +74,10 @@ import {
   TRICKPLAY_LANE_JOB_TYPES,
 } from "./tasks/jobHandlers";
 import { createTaskRoutes } from "./tasks/taskRoutes";
-import { createProcessingJobStore } from "./processing/jobStore";
+import {
+  createProcessingJobStore,
+  WORKSPACE_CLAIMING_STATES,
+} from "./processing/jobStore";
 import { createProcessingRoutes } from "./processing/processingRoutes";
 import { createProcessingJobRunner } from "./processing/jobRunner";
 import { pruneLiveProgress } from "./processing/liveProgress";
@@ -980,14 +983,14 @@ export async function createNativeRuntime({
    * Only the worker sweeps, and only at startup, because this is the one
    * moment when nothing is running and the set of jobs that could still claim
    * a workspace is knowable. A workspace whose job is pending, queued, running
-   * or paused is left exactly where it is however old it looks: a job parked
+   * or paused, failed or cancelled is kept for retry however old it looks. A job parked
    * for a drive that has been unplugged for a month owns the most valuable
    * directory on the volume, and it is precisely the one an age-based sweep
    * would take.
    */
   const sweepAbandonedScratch = async (): Promise<void> => {
     const live = new Set<string>();
-    for (const state of ["pending", "queued", "running", "paused"] as const) {
+    for (const state of WORKSPACE_CLAIMING_STATES) {
       for (const job of await processingJobs.list({ state, limit: 10_000 })) {
         live.add(job.id);
       }
@@ -1323,17 +1326,12 @@ export async function createNativeRuntime({
 
   /*
    * Seyirlik's own leftovers, removed by what owns them rather than by age:
-   * encode workspaces no live job answers to, downloads nothing will import,
+   * encode workspaces no retryable job answers to, downloads nothing will import,
    * and temporary folders it made and did not get to remove. Each candidate is
    * asked about again immediately before it goes, so a job retried or a
    * download resumed a moment earlier keeps what it needs.
    */
-  const LIVE_PROCESSING_STATES = new Set([
-    "pending",
-    "queued",
-    "running",
-    "paused",
-  ]);
+  const LIVE_PROCESSING_STATES = new Set<string>(WORKSPACE_CLAIMING_STATES);
   const collectGarbageJob = createGarbageJobHandler({
     jobsRoot: storageRoles.jobsRoot,
     isWorkspaceClaimed: async (workspaceId) => {
@@ -1731,7 +1729,7 @@ export async function createNativeRuntime({
       store: processingJobs,
       queue,
       mediaRoot,
-      renditionRoot,
+      workRoot: storageRoles.jobsRoot,
       ...(ffmpegPath ? { ffmpegPath } : {}),
     }),
     ...(tmdb

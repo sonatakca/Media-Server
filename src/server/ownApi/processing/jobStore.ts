@@ -6,6 +6,16 @@ import type {
   VolumeIdentity,
 } from "../../../renditions/processing/storageIdentity";
 
+/** Job rows that still own retryable scratch; shared by startup and periodic cleanup. */
+export const WORKSPACE_CLAIMING_STATES = [
+  "pending",
+  "queued",
+  "running",
+  "paused",
+  "failed",
+  "cancelled",
+] as const;
+
 /**
  * The durable record of one media-processing job.
  *
