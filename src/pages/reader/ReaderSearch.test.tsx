@@ -74,6 +74,10 @@ describe("searching inside the reader", () => {
       "aria-valuenow",
       "40",
     );
+    // Slid in, never widened.
+    expect(
+      screen.getByRole("progressbar").querySelector("span")!.style.transform,
+    ).toBe("translateX(-60%)");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2500);

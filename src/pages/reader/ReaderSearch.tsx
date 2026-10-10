@@ -165,7 +165,10 @@ export function ReaderSearch({
           >
             <span
               style={{
-                width: progress === null ? undefined : `${progress * 100}%`,
+                transform:
+                  progress === null
+                    ? undefined
+                    : `translateX(${(progress - 1) * 100}%)`,
               }}
             />
           </div>
