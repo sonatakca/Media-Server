@@ -40,6 +40,8 @@ export interface BookSearchHit {
   block: number;
   anchor: string;
   text: string;
+  /** Where in its section the passage starts, 0 to 1, by its text. */
+  place: number;
   /** Meaning and words together; only meaningful against other hits. */
   score: number;
 }
@@ -124,6 +126,31 @@ function fromStored(value: unknown, sourceKey: string): BookIndex | null {
   return { sourceKey, passages: stored.passages, vectors };
 }
 
+const placesOf = new WeakMap<BookIndex["passages"], Float64Array>();
+
+/**
+ * Where each passage starts in its section, 0 to 1, by the text before it:
+ * the reader turns this into a place in the whole book with its own map of
+ * the book, so a hit is told in the reader's own percentages.
+ */
+function places(passages: BookIndex["passages"]): Float64Array {
+  let found = placesOf.get(passages);
+  if (!found) {
+    found = new Float64Array(passages.length);
+    const lengths = new Map<number, number>();
+    for (const { section, text } of passages)
+      lengths.set(section, (lengths.get(section) ?? 0) + text.length);
+    const before = new Map<number, number>();
+    passages.forEach(({ section, text }, at) => {
+      const done = before.get(section) ?? 0;
+      found![at] = done / Math.max(1, lengths.get(section)!);
+      before.set(section, done + text.length);
+    });
+    placesOf.set(passages, found);
+  }
+  return found;
+}
+
 /** The passages that best answer the query, best first (bookSearchRank.ts). */
 function rank(
   index: BookIndex,
@@ -144,6 +171,7 @@ function rank(
     meaning,
     query,
   );
+  const placeOf = places(index.passages);
   return {
     state: "ready",
     hits: ranked.map(({ at, score }) => {
@@ -153,6 +181,7 @@ function rank(
         block: passage.block,
         anchor: passage.anchor,
         text: passage.text,
+        place: Math.round(placeOf[at]! * 1000) / 1000,
         score: Math.round(score * 1000) / 1000,
       };
     }),

@@ -711,17 +711,32 @@ export function ReaderContentsDrawer({
     [map, spineIndexOf, toc],
   );
   // The contents list is in reading order: a section belongs to the last
-  // entry that starts at or before it.
+  // chapter that starts at or before it. Chapters are the top level, as the
+  // margin counts them (buildBookMap), so a part numbered "1" inside a
+  // chapter is never named on its own.
   const chapterOf = useCallback(
     (section: number) => {
+      const topLevel = toc.filter((entry) => entry.depth === 0);
       let label: string | null = null;
-      for (const entry of toc) {
+      for (const entry of topLevel.length >= 2 ? topLevel : toc) {
         const at = spineIndexOf(entry.href);
         if (at !== null && at <= section) label = entry.label.trim();
       }
       return label;
     },
     [spineIndexOf, toc],
+  );
+  // A search hit's place in the whole book, in the reader's own measure: its
+  // section's share of the book's locations, and its place in that section.
+  const bookPlaceOf = useCallback(
+    (section: number, place: number) => {
+      if (!map) return null;
+      const start = map.sectionStarts[section];
+      if (start === undefined) return null;
+      const end = map.sectionStarts[section + 1] ?? map.total;
+      return Math.min(1, (start + (end - start) * place) / map.total);
+    },
+    [map],
   );
   const longest = Math.max(
     1,
@@ -877,6 +892,7 @@ export function ReaderContentsDrawer({
           active={open && tab === "search"}
           hidden={tab !== "search"}
           chapterOf={chapterOf}
+          bookPlaceOf={bookPlaceOf}
           onShow={onShowPassage}
         />
         {tab === "search" ? null : tab === "contents" ? (

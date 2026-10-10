@@ -9,6 +9,11 @@ export interface BookSearchHit {
   /** The start of the passage's text in that block, to check the block by. */
   anchor: string;
   text: string;
+  /**
+   * Where in its section the passage starts, 0 to 1; missing from a server
+   * older than it.
+   */
+  place?: number;
   score: number;
 }
 

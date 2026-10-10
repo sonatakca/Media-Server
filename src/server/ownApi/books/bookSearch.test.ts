@@ -108,6 +108,8 @@ describe("searching a book by meaning", () => {
       text: "Maria Puder güldü.",
     });
     expect(outcome.hits.map((hit) => hit.section)).toEqual([3, 1, 2]);
+    // Each passage is the first of its section here, so it starts at 0.
+    expect(outcome.hits.map((hit) => hit.place)).toEqual([0, 0, 0]);
     expect(outcome.hits[0]!.score).toBeGreaterThan(outcome.hits[1]!.score);
     // The words it holds, to be marked; "nasıl" is not in the book.
     expect(outcome.terms).toEqual(["maria", "güldü"]);

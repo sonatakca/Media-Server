@@ -242,4 +242,31 @@ describe("searching inside the reader", () => {
     ).toBeInTheDocument();
     expect(searchBook).toHaveBeenCalledTimes(asked);
   });
+
+  it("says where in the book each passage is, once the reader has measured it", async () => {
+    searchBook.mockImplementation(async (_id, query) =>
+      query
+        ? { state: "ready", hits: [{ ...HIT, place: 0.5 }] }
+        : { state: "ready", hits: [] },
+    );
+    const bookPlaceOf = vi.fn((section: number, place: number) =>
+      section === 18 ? 0.4 + place * 0.04 : null,
+    );
+    const user = userEvent.setup();
+    render(
+      <LanguageProvider>
+        <ReaderSearch
+          itemId="book-1"
+          active
+          chapterOf={() => "On Sekizinci Bölüm"}
+          bookPlaceOf={bookPlaceOf}
+          onShow={vi.fn()}
+        />
+      </LanguageProvider>,
+    );
+    await user.type(screen.getByRole("searchbox"), "kırbaç{Enter}");
+    const result = await screen.findByRole("button", { name: /Vahşi/ });
+    expect(bookPlaceOf).toHaveBeenCalledWith(18, 0.5);
+    expect(result).toHaveTextContent("On Sekizinci Bölüm42%");
+  });
 });

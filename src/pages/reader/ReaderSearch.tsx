@@ -9,6 +9,7 @@ import {
   type BookSearchOutcome,
 } from "../../lib/bookSearchApi";
 import { searchExcerpt } from "../../lib/bookSearchText";
+import { formatPercent } from "./readerText";
 
 /** How often a book being prepared is asked about again. */
 const PREPARING_POLL_MS = 2500;
@@ -32,6 +33,7 @@ export function ReaderSearch({
   active,
   hidden = false,
   chapterOf,
+  bookPlaceOf,
   onShow,
 }: {
   itemId: string;
@@ -41,9 +43,14 @@ export function ReaderSearch({
   hidden?: boolean;
   /** The chapter a section belongs to, as the contents list names it. */
   chapterOf: (section: number) => string | null;
+  /**
+   * A place in a section as a share of the whole book, as the reader counts
+   * it; null until the reader has measured the book.
+   */
+  bookPlaceOf?: (section: number, place: number) => number | null;
   onShow: (hit: BookSearchHit, found: BookSearchFound) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [query, setQuery] = useState("");
   /** The question last sent; empty until one is. */
   const [asked, setAsked] = useState("");
@@ -224,6 +231,7 @@ export function ReaderSearch({
         <ol className="rd-list" aria-busy={busy || undefined}>
           {hits.map((hit) => {
             const excerpt = searchExcerpt(hit.text, found);
+            const inBook = bookPlaceOf?.(hit.section, hit.place ?? 0) ?? null;
             return (
               <li
                 key={`${hit.section}:${hit.block}:${hit.anchor}`}
@@ -248,6 +256,9 @@ export function ReaderSearch({
                     <span>
                       {chapterOf(hit.section) ?? t("reader.search.inBook")}
                     </span>
+                    {inBook !== null ? (
+                      <b>{formatPercent(inBook, language)}</b>
+                    ) : null}
                   </span>
                 </button>
               </li>
