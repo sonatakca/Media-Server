@@ -53,6 +53,8 @@ import { FavouriteButton } from "../FavouriteButton";
 import { readHeroTrailersEnabledPreference } from "../hero/heroModel";
 import { heroPlayState } from "../home/HeroActions";
 import { HERO_DWELL_MS, HERO_TRAILER_DELAY_MS } from "../home/homeHeroModel";
+import { AMBIENT_SOURCE_WIDTH } from "../../lib/ambientBlur";
+import { useBakedAmbient } from "./useBakedAmbient";
 
 /**
  * The phone's home hero: a deck of posters. The one in front is a poster
@@ -106,25 +108,45 @@ const FACTS =
   "mt-3 h-5 w-full truncate text-center text-[0.8125rem] font-semibold leading-5 text-white/[0.78]";
 const ACTIONS = "mt-3 flex h-11 w-full items-center gap-2";
 
-function getPosterUrl(item: MediaItem): string {
+function getPosterUrl(
+  item: MediaItem,
+  coverWidth = 900,
+  backdropWidth = 1280,
+): string {
   if (item.Type === "Episode" && item.SeriesId && item.SeriesPrimaryImageTag) {
-    return getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 900);
+    return getPrimaryImageUrl(
+      item.SeriesId,
+      item.SeriesPrimaryImageTag,
+      coverWidth,
+    );
   }
   if (item.ImageTags?.Primary) {
-    return getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 900);
+    return getPrimaryImageUrl(item.Id, item.ImageTags.Primary, coverWidth);
   }
   if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]) {
     return getBackdropImageUrl(
       item.ParentBackdropItemId,
       item.ParentBackdropImageTags[0],
-      1280,
+      backdropWidth,
     );
   }
   if (item.BackdropImageTags?.[0]) {
-    return getBackdropImageUrl(item.Id, item.BackdropImageTags[0], 1280);
+    return getBackdropImageUrl(item.Id, item.BackdropImageTags[0], backdropWidth);
   }
   return "";
 }
+
+/** The poster at the size its baked light is made from. */
+const getAmbientSource = (item: MediaItem | undefined) =>
+  item ? getPosterUrl(item, AMBIENT_SOURCE_WIDTH, AMBIENT_SOURCE_WIDTH) : "";
+
+/**
+ * The light's look: what `blur-3xl saturate-150` on the full poster gave.
+ * The field spans the hero and the 4rem it bleeds past each side.
+ */
+const AMBIENT_BLUR_PX = 64;
+const AMBIENT_SATURATION = 1.5;
+const AMBIENT_BLEED_PX = 128;
 
 const mod = (value: number, length: number) =>
   ((value % length) + length) % length;
@@ -496,6 +518,22 @@ export function PhoneHomeHero({
     }
   }, [isInView, isPageVisible, isTrailerMuted, isTrailerPlaying]);
 
+  const ambientUrl = useBakedAmbient(
+    getAmbientSource(frontItem),
+    count > 1
+      ? [front + 1, front - 1].map((slot) =>
+          getAmbientSource(items[mod(slot, count)]),
+        )
+      : [],
+    {
+      blurPx: AMBIENT_BLUR_PX,
+      saturation: AMBIENT_SATURATION,
+      drawnWidth:
+        (typeof window === "undefined" ? 390 : window.innerWidth) +
+        AMBIENT_BLEED_PX,
+    },
+  );
+
   if (!frontItem) return <PhoneHomeHeroSkeleton />;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -576,16 +614,16 @@ export function PhoneHomeHero({
     frontItem.Type === "Episode" ||
     frontItem.Type === "Series" ||
     frontItem.MediaType === "Video";
-  const frontPoster = getPosterUrl(frontItem);
   const title = metadata.title ?? frontItem.Name;
   const slots =
     count > 1 ? [front - 2, front - 1, front, front + 1, front + 2] : [front];
 
+  // The baked field, cross-faded: the turn moves only opacity, never a filter.
   const ambient = (
     <AnimatePresence mode="sync" initial={false}>
-      {frontPoster ? (
+      {ambientUrl ? (
         <motion.div
-          key={frontPoster}
+          key={ambientUrl}
           className="absolute -inset-16 overflow-hidden"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -593,10 +631,10 @@ export function PhoneHomeHero({
           transition={{ duration: reduceMotion ? 0 : 0.9, ease: EASE_OUT }}
         >
           <img
-            src={frontPoster}
+            src={ambientUrl}
             alt=""
             decoding="async"
-            className="h-full w-full scale-125 object-cover opacity-72 blur-3xl saturate-150"
+            className="h-full w-full scale-125 object-cover opacity-72"
           />
         </motion.div>
       ) : null}
