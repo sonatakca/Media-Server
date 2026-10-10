@@ -711,6 +711,36 @@ export async function hasVerifiedScratchPackage({
   );
 }
 
+/**
+ * Bytes in this job's scratch package that a rebuild will remove first.
+ *
+ * A package assembled but not yet marked verified — the state a restart finds
+ * mid-validation — is deleted before the packager re-assembles from its
+ * checkpoints. Planning must count those bytes as space that will come back,
+ * or it demands room for a copy it is about to free: a restart during
+ * validation then failed a finished 4-hour encode on disk space. A verified
+ * package is not counted; it is published as it is, and planning already
+ * asks no scratch for it.
+ */
+export async function replaceableScratchPackageBytes({
+  workRoot,
+  workspaceId,
+  sourceFingerprint,
+}: {
+  workRoot: string;
+  workspaceId: string;
+  sourceFingerprint: string;
+}): Promise<number> {
+  const workspaceDirectory = assertOwnedJobWorkspace(
+    workRoot,
+    path.join(workRoot, assertWorkspaceId(workspaceId)),
+  );
+  const paths = verifiedPackagePaths(workspaceDirectory, sourceFingerprint);
+  if ((await readVerifiedScratchPackage({ ...paths, sourceFingerprint })) !== null)
+    return 0;
+  return checkpointBytes(paths.workVersionRoot);
+}
+
 async function readVerifiedScratchPackage({
   marker,
   workVersionRoot,

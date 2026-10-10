@@ -438,6 +438,79 @@ describe("processing job runner", () => {
     },
   );
 
+  it.each([
+    { withPackage: true, resumes: true },
+    { withPackage: false, resumes: false },
+  ])(
+    "credits an unverified package a restart will rebuild: $withPackage",
+    async ({ withPackage, resumes }) => {
+      // A restart mid-validation: the checkpoints and an assembled package
+      // with no verified marker. The packager removes that package before it
+      // re-assembles, so its bytes count as space that comes back.
+      const estimate = decideProcessing({
+        probe: probe(),
+        container: "mp4",
+        sizeBytes: input.sizeBytes,
+        hardware,
+      }).estimate;
+      const required =
+        estimate.outputBytes + estimate.stagingBytes + estimate.reserveBytes;
+      const workRoot = (paths as unknown as { stateRoot: string }).stateRoot;
+      const own = path.join(workRoot, "job-1");
+      mkdirSync(own, { recursive: true });
+      writeFileSync(
+        path.join(own, ".seyirlik-job.json"),
+        JSON.stringify({ owner: "seyirlik-processing-job", workspaceId: "job-1" }),
+      );
+      const fingerprint = fake.latest().sourceFingerprint;
+      const checkpoints = checkpointRoot(
+        workRoot,
+        "job-1",
+        ADAPTIVE_PROFILE_VERSION,
+        fingerprint,
+      );
+      mkdirSync(checkpoints, { recursive: true });
+      writeFileSync(path.join(checkpoints, "epoch.m4s"), Buffer.alloc(1024 * 1024));
+      if (withPackage) {
+        const assembled = path.join(
+          own,
+          `${ADAPTIVE_PROFILE_VERSION}-${fingerprint.slice(0, 16)}.verified-package`,
+        );
+        mkdirSync(path.join(assembled, "video"), { recursive: true });
+        writeFileSync(
+          path.join(assembled, "video", "segment.m4s"),
+          Buffer.alloc(1024 * 1024),
+        );
+      }
+      const packageFn = vi.fn(async () => ({
+        mediaId: "file-1",
+        relativePath: input.relativePath,
+        status: "ready" as const,
+        versionDirectory: "version",
+        storageBytes: 1,
+      }));
+      const localRunner = createProcessingJobRunner({
+        store: fake.store,
+        paths,
+        mediaRoot: "/media",
+        detectHardwareFn: vi.fn(async () => hardware) as never,
+        probeFn: vi.fn(async () => probe()) as never,
+        packageFn: packageFn as never,
+        // Short by more than the checkpoints, but not by both together.
+        freeBytesFn: vi.fn(async () => required - 1.5 * 1024 * 1024) as never,
+      });
+      const outcome = await localRunner.run(input);
+      if (resumes) {
+        expect(packageFn).toHaveBeenCalledOnce();
+        expect(outcome.status).toBe("succeeded");
+      } else {
+        expect(packageFn).not.toHaveBeenCalled();
+        expect(outcome.errorCode).toBe("INSUFFICIENT_DISK_SPACE");
+      }
+      rmSync(own, { recursive: true, force: true });
+    },
+  );
+
   it("stops before encoding when the volume is too full", async () => {
     const packageFn = vi.fn();
     const localRunner = createProcessingJobRunner({

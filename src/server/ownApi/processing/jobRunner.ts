@@ -4,6 +4,7 @@ import { createPauseController } from "../../../renditions/processing/pauseContr
 import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
 import {
   hasVerifiedScratchPackage,
+  replaceableScratchPackageBytes,
   packageAdaptiveRendition,
 } from "../../../renditions/adaptive/packager";
 import { cleanupPublicationIncoming } from "../../../renditions/adaptive/publishTitle";
@@ -191,6 +192,8 @@ export interface ProcessingJobRunnerDeps {
   freeBytesFn?: typeof freeBytesOn;
   /** Whether a verified package is already on scratch. Injected in tests. */
   verifiedPackageFn?: typeof hasVerifiedScratchPackage;
+  /** Bytes of an unverified scratch package a rebuild removes. Injected in tests. */
+  replaceablePackageFn?: typeof replaceableScratchPackageBytes;
   /**
    * Whether the storage this work needs is currently available.
    *
@@ -424,6 +427,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     probeFn = probeMediaFile,
     freeBytesFn = freeBytesOn,
     verifiedPackageFn = hasVerifiedScratchPackage,
+    replaceablePackageFn = replaceableScratchPackageBytes,
     storageAvailableFn,
     missingRootsFn,
     storageGuard = createPermissiveStorageGuard(),
@@ -873,16 +877,24 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       path.join(workRoot, job.id),
       job.id,
     )
-      .then(() =>
-        checkpointBytes(
+      .then(async () => {
+        const checkpoints = await checkpointBytes(
           checkpointRoot(
             workRoot,
             job.id,
             ADAPTIVE_PROFILE_VERSION,
             job.sourceFingerprint,
           ),
-        ),
-      )
+        );
+        // An assembled package awaiting validation is removed before the
+        // rebuild, so its bytes come back too.
+        const replaceable = await replaceablePackageFn({
+          workRoot,
+          workspaceId: job.id,
+          sourceFingerprint: job.sourceFingerprint,
+        }).catch(() => 0);
+        return checkpoints + replaceable;
+      })
       .catch(() => 0);
     const decision = decideProcessing({
       inheritedBytes,
