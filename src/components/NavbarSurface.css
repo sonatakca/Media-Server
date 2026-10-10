@@ -1,9 +1,7 @@
 /* The navbar's ceiling (NavbarSurface.tsx). The layer spans the header and
-   reaches --reach below it; --nav-p (0..1) is how far the page has scrolled
-   into it, and each layer fades by it itself. */
+   reaches --reach below it. Each layer animates to its open/closed opacity. */
 
 .navbar-surface {
-  --nav-p: 0;
   --reach: 3rem;
   position: absolute;
   inset: 0 0 auto 0;
@@ -34,7 +32,6 @@
     transparent 92%
   );
   mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 92%);
-  opacity: var(--nav-p);
 }
 
 /* The page's own black, thinning on an eased curve: a straight ramp shows a
@@ -52,5 +49,4 @@
     rgba(0, 0, 0, 0.055) 92%,
     rgba(0, 0, 0, 0) 100%
   );
-  opacity: var(--nav-p);
 }

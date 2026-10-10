@@ -1,5 +1,5 @@
 import { NotificationHistoryPanel } from "../notifications/NotificationHistoryPanel";
-import { useEffect, useState } from "react";
+import { useNavbarScrolled } from "../../hooks/useNavbarScrolled";
 import { Search } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -14,20 +14,7 @@ import { MobileTabBar } from "./tabBar/MobileTabBar";
 export function MobileNavbar() {
   const location = useLocation();
   const { t } = useLanguage();
-  const [hasScrolled, setHasScrolled] = useState(false);
-
-  useEffect(() => {
-    const updateScrolledState = () => {
-      setHasScrolled(window.scrollY > 10);
-    };
-
-    updateScrolledState();
-    window.addEventListener("scroll", updateScrolledState, { passive: true });
-
-    return () => {
-      window.removeEventListener("scroll", updateScrolledState);
-    };
-  }, []);
+  const hasScrolled = useNavbarScrolled();
 
   const headerOverArtwork =
     location.pathname === "/home" ||
@@ -39,11 +26,11 @@ export function MobileNavbar() {
       <header
         // On a tablet the clear bar sits over the floating backdrop, which
         // starts 8px down: its contents drop to the bar's foot to clear it.
-        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between  px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[padding] duration-300 ${
+        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between  px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[padding] duration-300 motion-reduce:transition-none ${
           showHeaderSurface ? "" : "md:pb-0"
         }`}
       >
-        <NavbarSurface forced={!headerOverArtwork} variant="mobile" />
+        <NavbarSurface shown={showHeaderSurface} variant="mobile" />
         <Link
           to="/home"
           aria-label={t("nav.brandHome")}

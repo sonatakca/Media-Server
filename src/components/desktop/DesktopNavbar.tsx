@@ -1,5 +1,6 @@
 import { NotificationHistoryPanel } from "../notifications/NotificationHistoryPanel";
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
+import { useNavbarScrolled } from "../../hooks/useNavbarScrolled";
 import { Search } from "lucide-react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -22,7 +23,7 @@ const isMacPlatform =
 export function DesktopNavbar() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const [hasScrolled, setHasScrolled] = useState(false);
+  const hasScrolled = useNavbarScrolled();
   const libraryRoutes = {
     movies: "/movies",
     series: "/shows",
@@ -40,19 +41,6 @@ export function DesktopNavbar() {
   ];
   const devClickCountRef = useRef(0);
   const devClickTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const updateScrolledState = () => {
-      setHasScrolled(window.scrollY > 12);
-    };
-
-    updateScrolledState();
-    window.addEventListener("scroll", updateScrolledState, { passive: true });
-
-    return () => {
-      window.removeEventListener("scroll", updateScrolledState);
-    };
-  }, []);
 
   const handleBrandEasterEggClick = () => {
     devClickCountRef.current += 1;
@@ -80,14 +68,14 @@ export function DesktopNavbar() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 select-none pt-[env(safe-area-inset-top)] [-webkit-tap-highlight-color:transparent]">
-      <NavbarSurface variant="desktop" />
+      <NavbarSurface shown={hasScrolled} variant="desktop" />
       {/* Clear, the bar sits over a floating backdrop that starts 8px down,
           so its contents drop by as much to stand as far inside its top edge
           as inside its side. `top`, not a transform: a transform would
           anchor the menus' fixed panels to the bar. */}
       <nav
-        className={`relative z-[1] mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 transition-[top] ease-out sm:h-20 sm:gap-8 sm:px-6 lg:px-8 ${
-          hasScrolled ? "top-0 duration-700" : "top-2 duration-500"
+        className={`relative z-[1] mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 transition-[top] duration-300 ease-out motion-reduce:transition-none sm:h-20 sm:gap-8 sm:px-6 lg:px-8 ${
+          hasScrolled ? "top-0" : "top-2"
         }`}
       >
         <Link
